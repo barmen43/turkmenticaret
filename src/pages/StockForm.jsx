@@ -9,10 +9,46 @@ export default function StockForm() {
   const navigate = useNavigate();
   const isEditing = Boolean(id);
 
+  const selectStyles = {
+    control: (baseStyles, state) => ({
+      ...baseStyles,
+      backgroundColor: 'rgba(0, 0, 0, 0.2)',
+      borderColor: state.isFocused ? 'var(--color-primary)' : 'var(--color-border)',
+      boxShadow: state.isFocused ? '0 0 0 2px rgba(249, 115, 22, 0.2)' : 'none',
+      borderRadius: 'var(--radius-md)',
+      padding: '0.2rem',
+      color: 'white',
+      fontFamily: "'Outfit', sans-serif"
+    }),
+    menu: (baseStyles) => ({
+      ...baseStyles,
+      backgroundColor: 'var(--color-surface)',
+      border: '1px solid var(--color-border)',
+      zIndex: 9999
+    }),
+    option: (baseStyles, { isFocused, isSelected }) => ({
+      ...baseStyles,
+      backgroundColor: isSelected ? 'var(--color-primary)' : isFocused ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
+      color: isSelected ? 'white' : 'var(--color-text)',
+      cursor: 'pointer',
+    }),
+    singleValue: (baseStyles) => ({
+      ...baseStyles,
+      color: 'var(--color-text)',
+    }),
+    input: (baseStyles) => ({
+      ...baseStyles,
+      color: 'var(--color-text)',
+    }),
+  };
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [categories, setCategories] = useState([]);
-  const [isLoadingCategories, setIsLoadingCategories] = useState(false);
+  const [originalPartNumbers, setOriginalPartNumbers] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [vehicleBrands, setVehicleBrands] = useState([]);
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
   
   const [formData, setFormData] = useState({
     part_code: '',
@@ -21,6 +57,9 @@ export default function StockForm() {
     quantity: 0,
     price: 0,
     category: '',
+    original_part_number: '',
+    brand: '',
+    vehicle_brand: '',
     shelf_location: '',
     supplier: '',
     min_stock_warning: 5,
@@ -32,34 +71,42 @@ export default function StockForm() {
     if (isEditing) {
       loadStock();
     }
-    loadCategories();
+    loadOptions();
   }, [id]);
 
-  const loadCategories = async () => {
-    setIsLoadingCategories(true);
-    const { data, error } = await supabase.from('categories').select('name').order('name');
-    if (!error && data) {
-      setCategories(data.map(c => ({ value: c.name, label: c.name })));
-    }
-    setIsLoadingCategories(false);
+  const loadOptions = async () => {
+    setIsLoadingOptions(true);
+    
+    const [catRes, opnRes, brandRes, vbRes] = await Promise.all([
+      supabase.from('categories').select('name').order('name'),
+      supabase.from('original_part_numbers').select('name').order('name'),
+      supabase.from('brands').select('name').order('name'),
+      supabase.from('vehicle_brands').select('name').order('name')
+    ]);
+
+    if (!catRes.error && catRes.data) setCategories(catRes.data.map(c => ({ value: c.name, label: c.name })));
+    if (!opnRes.error && opnRes.data) setOriginalPartNumbers(opnRes.data.map(c => ({ value: c.name, label: c.name })));
+    if (!brandRes.error && brandRes.data) setBrands(brandRes.data.map(c => ({ value: c.name, label: c.name })));
+    if (!vbRes.error && vbRes.data) setVehicleBrands(vbRes.data.map(c => ({ value: c.name, label: c.name })));
+
+    setIsLoadingOptions(false);
   };
 
-  const handleCreateCategory = async (inputValue) => {
-    setIsLoadingCategories(true);
-    const newCategory = { value: inputValue, label: inputValue };
+  const handleCreateOption = async (inputValue, tableName, stateSetter, fieldName) => {
+    setIsLoadingOptions(true);
+    const newOption = { value: inputValue, label: inputValue };
     
     // Optimistically add to UI
-    setCategories((prev) => [...prev, newCategory]);
-    handleChange({ target: { name: 'category', value: inputValue, type: 'text' } });
+    stateSetter((prev) => [...prev, newOption]);
+    handleChange({ target: { name: fieldName, value: inputValue, type: 'text' } });
 
     // Insert to DB
-    const { error } = await supabase.from('categories').insert([{ name: inputValue }]);
+    const { error } = await supabase.from(tableName).insert([{ name: inputValue }]);
     if (error) {
-      console.error('Kategori eklenirken hata oluştu:', error);
-      // Not strictly necessary to revert for this simple UX, but good practice
+      console.error(`${tableName} eklenirken hata oluştu:`, error);
     }
     
-    setIsLoadingCategories(false);
+    setIsLoadingOptions(false);
   };
 
   const loadStock = async () => {
@@ -74,6 +121,9 @@ export default function StockForm() {
         quantity: data.quantity || 0,
         price: data.price || 0,
         category: data.category || '',
+        original_part_number: data.original_part_number || '',
+        brand: data.brand || '',
+        vehicle_brand: data.vehicle_brand || '',
         shelf_location: data.shelf_location || '',
         supplier: data.supplier || '',
         min_stock_warning: data.min_stock_warning || 5,
@@ -158,46 +208,63 @@ export default function StockForm() {
               <label className="form-label">Kategori</label>
               <CreatableSelect
                 isClearable
-                isDisabled={isLoadingCategories}
-                isLoading={isLoadingCategories}
+                isDisabled={isLoadingOptions}
+                isLoading={isLoadingOptions}
                 onChange={(newValue) => handleChange({ target: { name: 'category', value: newValue ? newValue.value : '', type: 'text' } })}
-                onCreateOption={handleCreateCategory}
+                onCreateOption={(val) => handleCreateOption(val, 'categories', setCategories, 'category')}
                 options={categories}
                 value={formData.category ? { value: formData.category, label: formData.category } : null}
                 placeholder="Seçiniz veya yazıp Enter'a basınız..."
                 formatCreateLabel={(inputValue) => `"${inputValue}" olarak yeni ekle`}
-                styles={{
-                  control: (baseStyles, state) => ({
-                    ...baseStyles,
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    borderColor: state.isFocused ? 'var(--color-primary)' : 'var(--color-border)',
-                    boxShadow: state.isFocused ? '0 0 0 2px rgba(249, 115, 22, 0.2)' : 'none',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '0.2rem',
-                    color: 'white',
-                    fontFamily: "'Outfit', sans-serif"
-                  }),
-                  menu: (baseStyles) => ({
-                    ...baseStyles,
-                    backgroundColor: 'var(--color-surface)',
-                    border: '1px solid var(--color-border)',
-                    zIndex: 9999
-                  }),
-                  option: (baseStyles, { isFocused, isSelected }) => ({
-                    ...baseStyles,
-                    backgroundColor: isSelected ? 'var(--color-primary)' : isFocused ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
-                    color: isSelected ? 'white' : 'var(--color-text)',
-                    cursor: 'pointer',
-                  }),
-                  singleValue: (baseStyles) => ({
-                    ...baseStyles,
-                    color: 'var(--color-text)',
-                  }),
-                  input: (baseStyles) => ({
-                    ...baseStyles,
-                    color: 'var(--color-text)',
-                  }),
-                }}
+                styles={selectStyles}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Orijinal Parça Numarası</label>
+              <CreatableSelect
+                isClearable
+                isDisabled={isLoadingOptions}
+                isLoading={isLoadingOptions}
+                onChange={(newValue) => handleChange({ target: { name: 'original_part_number', value: newValue ? newValue.value : '', type: 'text' } })}
+                onCreateOption={(val) => handleCreateOption(val, 'original_part_numbers', setOriginalPartNumbers, 'original_part_number')}
+                options={originalPartNumbers}
+                value={formData.original_part_number ? { value: formData.original_part_number, label: formData.original_part_number } : null}
+                placeholder="Seçiniz veya yazıp Enter'a basınız..."
+                formatCreateLabel={(inputValue) => `"${inputValue}" olarak yeni ekle`}
+                styles={selectStyles}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Marka</label>
+              <CreatableSelect
+                isClearable
+                isDisabled={isLoadingOptions}
+                isLoading={isLoadingOptions}
+                onChange={(newValue) => handleChange({ target: { name: 'brand', value: newValue ? newValue.value : '', type: 'text' } })}
+                onCreateOption={(val) => handleCreateOption(val, 'brands', setBrands, 'brand')}
+                options={brands}
+                value={formData.brand ? { value: formData.brand, label: formData.brand } : null}
+                placeholder="Seçiniz veya yazıp Enter'a basınız..."
+                formatCreateLabel={(inputValue) => `"${inputValue}" olarak yeni ekle`}
+                styles={selectStyles}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Araç Markası</label>
+              <CreatableSelect
+                isClearable
+                isDisabled={isLoadingOptions}
+                isLoading={isLoadingOptions}
+                onChange={(newValue) => handleChange({ target: { name: 'vehicle_brand', value: newValue ? newValue.value : '', type: 'text' } })}
+                onCreateOption={(val) => handleCreateOption(val, 'vehicle_brands', setVehicleBrands, 'vehicle_brand')}
+                options={vehicleBrands}
+                value={formData.vehicle_brand ? { value: formData.vehicle_brand, label: formData.vehicle_brand } : null}
+                placeholder="Seçiniz veya yazıp Enter'a basınız..."
+                formatCreateLabel={(inputValue) => `"${inputValue}" olarak yeni ekle`}
+                styles={selectStyles}
               />
             </div>
 

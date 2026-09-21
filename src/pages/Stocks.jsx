@@ -2,13 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { Search, Edit, Trash2, Plus, AlertCircle, Box } from 'lucide-react';
+import { Search, Edit, Trash2, Plus, AlertCircle, Box, RefreshCw, X } from 'lucide-react';
 
 export default function Stocks() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
   const [searchTerm, setSearchTerm] = useState(initialQuery);
   const navigate = useNavigate();
+
+  // Alternatives Modal State
+  const [alternativesModalOpen, setAlternativesModalOpen] = useState(false);
+  const [selectedPart, setSelectedPart] = useState(null);
+  const [alternatives, setAlternatives] = useState([]);
+  const [isLoadingAlternatives, setIsLoadingAlternatives] = useState(false);
 
   // Sync search input with URL if URL changes
   useEffect(() => {
@@ -23,9 +29,12 @@ export default function Stocks() {
       let query = supabase.from('stocks').select('*').order('created_at', { ascending: false });
 
       if (q) {
-        // Use full text search or ilike for partial matching
-        // Trigram index supports ilike perfectly
-        query = query.or(`part_code.ilike.%${q}%,part_name.ilike.%${q}%,shelf_location.ilike.%${q}%,barcode.ilike.%${q}%`);
+        // Arama terimini boşluklara göre bölüp her bir kelime için ayrı bir .or() filtresi ekliyoruz.
+        // Bu sayede "fren balata" yazıldığında, içinde hem "fren" hem "balata" geçenleri bulur. (AND mantığı)
+        const words = q.split(' ').filter(word => word.trim().length > 0);
+        words.forEach(word => {
+          query = query.or(`part_code.ilike.%${word}%,part_name.ilike.%${word}%,shelf_location.ilike.%${word}%,barcode.ilike.%${word}%,brand.ilike.%${word}%,vehicle_brand.ilike.%${word}%,original_part_number.ilike.%${word}%`);
+        });
       }
 
       const { data, error } = await query;
@@ -51,6 +60,29 @@ export default function Stocks() {
         window.location.reload();
       }
     }
+  };
+
+  const handleViewAlternatives = async (stock) => {
+    if (!stock.original_part_number) return;
+    
+    setSelectedPart(stock);
+    setAlternativesModalOpen(true);
+    setIsLoadingAlternatives(true);
+
+    const { data, error } = await supabase
+      .from('stocks')
+      .select('*')
+      .eq('original_part_number', stock.original_part_number)
+      .neq('id', stock.id)
+      .order('price', { ascending: true });
+
+    if (!error && data) {
+      setAlternatives(data);
+    } else {
+      setAlternatives([]);
+    }
+    
+    setIsLoadingAlternatives(false);
   };
 
   return (
@@ -113,7 +145,10 @@ export default function Stocks() {
                   <td className="font-bold text-primary">{stock.part_code}</td>
                   <td>
                     <div style={{ fontWeight: 500 }}>{stock.part_name}</div>
-                    {stock.category && <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{stock.category}</div>}
+                    {stock.category && <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'inline-block', marginRight: '0.5rem' }}>{stock.category}</div>}
+                    {stock.brand && <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'inline-block', marginRight: '0.5rem' }}>{stock.brand}</div>}
+                    {stock.vehicle_brand && <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'inline-block', marginRight: '0.5rem' }}>Araç: {stock.vehicle_brand}</div>}
+                    {stock.original_part_number && <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'inline-block' }}>Orijinal No: {stock.original_part_number}</div>}
                   </td>
                   <td>
                     <span className={`badge ${stock.part_type === 'Orijinal' ? 'badge-success' : 'badge-warning'}`}>
@@ -131,6 +166,16 @@ export default function Stocks() {
                   <td style={{ fontWeight: 600 }}>₺{stock.price.toLocaleString('tr-TR')}</td>
                   <td style={{ textAlign: 'right' }}>
                     <div className="flex justify-end gap-2">
+                      {stock.original_part_number && (
+                        <button 
+                          className="btn btn-secondary" 
+                          style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}
+                          onClick={() => handleViewAlternatives(stock)}
+                          title="Alternatifleri Gör"
+                        >
+                          <RefreshCw size={16} color="var(--color-primary)" />
+                        </button>
+                      )}
                       <button 
                         className="btn btn-secondary" 
                         style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}
@@ -160,6 +205,78 @@ export default function Stocks() {
           </div>
         )}
       </div>
+
+      {/* Alternatives Modal */}
+      {alternativesModalOpen && (
+        <div className="modal-overlay" onClick={() => setAlternativesModalOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.4rem' }}>Alternatif Parçalar</h3>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+                  Orijinal No: <span className="font-bold text-primary">{selectedPart?.original_part_number}</span>
+                </p>
+              </div>
+              <button className="modal-close" onClick={() => setAlternativesModalOpen(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="mb-4" style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius-md)' }}>
+                <strong>Seçili Parça:</strong> {selectedPart?.part_name} ({selectedPart?.brand || 'Markasız'}) - {selectedPart?.part_type} - ₺{selectedPart?.price.toLocaleString('tr-TR')}
+              </div>
+
+              {isLoadingAlternatives ? (
+                <div className="text-center py-4">Alternatifler aranıyor...</div>
+              ) : alternatives.length > 0 ? (
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Marka / Tür</th>
+                        <th>Parça Adı</th>
+                        <th>Raf Yeri</th>
+                        <th>Stok</th>
+                        <th>Fiyat</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {alternatives.map(alt => (
+                        <tr key={alt.id}>
+                          <td>
+                            <div className="font-bold">{alt.brand || '-'}</div>
+                            <span className={`badge ${alt.part_type === 'Orijinal' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '0.65rem' }}>
+                              {alt.part_type}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 500 }}>{alt.part_name}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Kodu: {alt.part_code}</div>
+                          </td>
+                          <td>{alt.shelf_location || '-'}</td>
+                          <td>
+                            <div className="flex items-center gap-2">
+                              <span style={{ fontWeight: 'bold' }}>{alt.quantity}</span>
+                              {alt.quantity <= alt.min_stock_warning && <AlertCircle size={14} color="var(--color-danger)" />}
+                            </div>
+                          </td>
+                          <td className="font-bold text-primary">₺{alt.price.toLocaleString('tr-TR')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center" style={{ padding: '2rem', color: 'var(--color-text-muted)' }}>
+                  <Box size={32} style={{ margin: '0 auto 0.5rem', opacity: 0.5 }} />
+                  <p>Bu orijinal numaraya sahip başka bir alternatif parça bulunamadı.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

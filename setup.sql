@@ -85,3 +85,44 @@ ON public.categories FOR INSERT
 TO authenticated
 WITH CHECK (true);
 
+
+-- 5. Yeni Alanlar İçin Tablolar (Orijinal Parça Numarası, Marka, Araç Markası)
+CREATE TABLE IF NOT EXISTS public.original_part_numbers (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.brands (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.vehicle_brands (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.original_part_numbers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.brands ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vehicle_brands ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY ""Enable read access for authenticated users only on opn"" ON public.original_part_numbers FOR SELECT TO authenticated USING (true);
+CREATE POLICY ""Enable insert access for authenticated users only on opn"" ON public.original_part_numbers FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY ""Enable read access for authenticated users only on brands"" ON public.brands FOR SELECT TO authenticated USING (true);
+CREATE POLICY ""Enable insert access for authenticated users only on brands"" ON public.brands FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY ""Enable read access for authenticated users only on vb"" ON public.vehicle_brands FOR SELECT TO authenticated USING (true);
+CREATE POLICY ""Enable insert access for authenticated users only on vb"" ON public.vehicle_brands FOR INSERT TO authenticated WITH CHECK (true);
+
+-- Mevcut veritabanı için update komutları (Eğer stocks tablosu önceden oluşturulmuşsa)
+ALTER TABLE public.stocks ADD COLUMN IF NOT EXISTS original_part_number TEXT;
+ALTER TABLE public.stocks ADD COLUMN IF NOT EXISTS brand TEXT;
+ALTER TABLE public.stocks ADD COLUMN IF NOT EXISTS vehicle_brand TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_stocks_original_part_number ON public.stocks USING gin (original_part_number gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_stocks_brand ON public.stocks USING gin (brand gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_stocks_vehicle_brand ON public.stocks USING gin (vehicle_brand gin_trgm_ops);
