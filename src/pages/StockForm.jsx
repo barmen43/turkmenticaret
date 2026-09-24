@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Save, X, ArrowLeft } from 'lucide-react';
+import { Save, X, ArrowLeft, RefreshCw, Camera } from 'lucide-react';
 import CreatableSelect from 'react-select/creatable';
+import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
 export default function StockForm() {
   const { id } = useParams();
@@ -66,6 +67,8 @@ export default function StockForm() {
     barcode: '',
     part_type: 'Orijinal'
   });
+
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   useEffect(() => {
     if (isEditing) {
@@ -138,6 +141,15 @@ export default function StockForm() {
     setFormData(prev => ({
       ...prev,
       [name]: type === 'number' ? Number(value) : value
+    }));
+  };
+
+  const generateBarcode = () => {
+    // İç kullanım için 800 ile başlayan 12 haneli rastgele bir barkod numarası oluşturur
+    const randomPart = Math.floor(Math.random() * 1000000000).toString().padStart(9, '0');
+    setFormData(prev => ({
+      ...prev,
+      barcode: `800${randomPart}`
     }));
   };
 
@@ -308,8 +320,31 @@ export default function StockForm() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Barkod</label>
-              <input type="text" name="barcode" value={formData.barcode} onChange={handleChange} className="form-input" />
+              <label className="form-label flex justify-between items-center">
+                <span>Barkod</span>
+                <div className="flex gap-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setScannerOpen(true)}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', borderRadius: 'var(--radius-sm)' }}
+                    title="Kamerayla Okut"
+                  >
+                    <Camera size={14} />
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={generateBarcode}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', borderRadius: 'var(--radius-sm)' }}
+                    title="Otomatik Barkod Oluştur"
+                  >
+                    <RefreshCw size={12} />
+                    <span>Oluştur</span>
+                  </button>
+                </div>
+              </label>
+              <input type="text" name="barcode" value={formData.barcode} onChange={handleChange} className="form-input" placeholder="Okutun veya oluşturun..." />
             </div>
 
             <div className="form-group">
@@ -332,6 +367,14 @@ export default function StockForm() {
         </div>
 
       </form>
+
+      {/* Barcode Scanner Modal */}
+      {scannerOpen && (
+        <BarcodeScannerModal 
+          onClose={() => setScannerOpen(false)}
+          onScan={(code) => setFormData(prev => ({ ...prev, barcode: code }))}
+        />
+      )}
     </div>
   );
 }

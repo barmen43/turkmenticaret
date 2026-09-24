@@ -2,8 +2,82 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { Search, Edit, Trash2, Plus, AlertCircle, Box, RefreshCw, X } from 'lucide-react';
+import { Search, Edit, Trash2, Plus, AlertCircle, Box, RefreshCw, X, HelpCircle, Printer, Camera } from 'lucide-react';
+import BarcodeModal from '../components/BarcodeModal';
+import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
+// Basit Levenshtein mesafesi algoritması ile benzerlik hesaplama
+const getSimilarity = (s1, s2) => {
+  s1 = s1.toLowerCase();
+  s2 = s2.toLowerCase();
+  if (s1 === s2) return 1.0;
+  
+  const len1 = s1.length;
+  const len2 = s2.length;
+  if (len1 === 0 || len2 === 0) return 0.0;
+
+  const costs = new Array(len2 + 1);
+  for (let i = 0; i <= len1; i++) {
+    let lastValue = i;
+    for (let j = 0; j <= len2; j++) {
+      if (i === 0) {
+        costs[j] = j;
+      } else {
+        if (j > 0) {
+          let newValue = costs[j - 1];
+          if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
+            newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+          }
+          costs[j - 1] = lastValue;
+          lastValue = newValue;
+        }
+      }
+    }
+    if (i > 0) costs[len2] = lastValue;
+  }
+  
+  const distance = costs[len2];
+  const maxLen = Math.max(len1, len2);
+  return (maxLen - distance) / maxLen;
+};
+
+// Fuzzy arama ile alternatif öneriler oluşturma
+const getSuggestions = (searchTerm, allStocks) => {
+  if (!searchTerm || !allStocks || allStocks.length === 0) return [];
+  
+  const normalizedSearch = searchTerm.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (normalizedSearch.length < 3) return [];
+
+  const scoredStocks = allStocks.map(stock => {
+    let bestScore = 0;
+    
+    // Parça kodunu boşluksuz ve sembolsüz karşılaştır
+    const code = (stock.part_code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (code) {
+       if (code === normalizedSearch) bestScore = 1.0;
+       else if (code.includes(normalizedSearch) || normalizedSearch.includes(code)) bestScore = Math.max(bestScore, 0.8);
+       else bestScore = Math.max(bestScore, getSimilarity(normalizedSearch, code));
+    }
+
+    // Parça adındaki her bir kelime ile karşılaştır
+    const nameWords = (stock.part_name || '').toLowerCase().split(/[\s-]+/);
+    for (const word of nameWords) {
+       const cleanWord = word.replace(/[^a-z0-9]/g, '');
+       if (cleanWord.length > 2) {
+          if (cleanWord === normalizedSearch) bestScore = Math.max(bestScore, 0.9);
+          else bestScore = Math.max(bestScore, getSimilarity(normalizedSearch, cleanWord));
+       }
+    }
+
+    return { stock, score: bestScore };
+  });
+
+  return scoredStocks
+    .filter(s => s.score > 0.6) // Benzerlik eşiği (0.6 ve üzeri kabul edilir)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4) // En iyi 4 öneriyi al
+    .map(s => s.stock);
+};
 export default function Stocks() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
@@ -15,6 +89,13 @@ export default function Stocks() {
   const [selectedPart, setSelectedPart] = useState(null);
   const [alternatives, setAlternatives] = useState([]);
   const [isLoadingAlternatives, setIsLoadingAlternatives] = useState(false);
+
+  // Barcode Modal State
+  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false);
+  const [selectedStockForBarcode, setSelectedStockForBarcode] = useState(null);
+
+  // Scanner Modal State
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   // Sync search input with URL if URL changes
   useEffect(() => {
@@ -30,8 +111,10 @@ export default function Stocks() {
 
       if (q) {
         // Arama terimini boşluklara göre bölüp her bir kelime için ayrı bir .or() filtresi ekliyoruz.
-        // Bu sayede "fren balata" yazıldığında, içinde hem "fren" hem "balata" geçenleri bulur. (AND mantığı)
-        const words = q.split(' ').filter(word => word.trim().length > 0);
+        // Boşluk hatalarını tolere etmek için harf ve sayılar arasına otomatik boşluk ekleyebiliriz (örn. ANKA38001 -> ANKA 38001)
+        const normalizedQ = q.replace(/([a-zA-Z])(\d)/g, '$1 $2').replace(/(\d)([a-zA-Z])/g, '$1 $2');
+        const words = normalizedQ.split(/[\s-]+/).filter(word => word.trim().length > 0);
+        
         words.forEach(word => {
           query = query.or(`part_code.ilike.%${word}%,part_name.ilike.%${word}%,shelf_location.ilike.%${word}%,barcode.ilike.%${word}%,brand.ilike.%${word}%,vehicle_brand.ilike.%${word}%,original_part_number.ilike.%${word}%`);
         });
@@ -43,13 +126,32 @@ export default function Stocks() {
     },
   });
 
+  // Eğer sonuç bulunamazsa öneriler için tüm veriyi çek (yalnızca sonuç yoksa çalışır)
+  const { data: suggestions, isLoading: isLoadingSuggestions } = useQuery({
+    queryKey: ['stock-suggestions', searchParams.get('q')],
+    enabled: !!searchParams.get('q') && stocks?.length === 0,
+    queryFn: async () => {
+      const q = searchParams.get('q');
+      // Öneri yapmak için sadece temel bilgileri çekiyoruz (performans için)
+      const { data, error } = await supabase.from('stocks').select('id, part_code, part_name, brand').limit(3000);
+      if (error) throw error;
+      
+      return getSuggestions(q, data);
+    }
+  });
+
   const handleSearchSubmit = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (searchTerm.trim()) {
       setSearchParams({ q: searchTerm.trim() });
     } else {
       setSearchParams({});
     }
+  };
+
+  const handleScan = (scannedCode) => {
+    setSearchTerm(scannedCode);
+    setSearchParams({ q: scannedCode });
   };
 
   const handleDelete = async (id) => {
@@ -97,16 +199,25 @@ export default function Stocks() {
 
       <div className="glass-panel mb-6" style={{ padding: '1.5rem' }}>
         <form onSubmit={handleSearchSubmit} className="flex gap-2">
-          <div style={{ position: 'relative', flex: 1 }}>
+          <div style={{ position: 'relative', flex: 1, display: 'flex' }}>
             <Search style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} size={20} />
             <input 
               type="text" 
               className="form-input" 
-              style={{ paddingLeft: '2.75rem' }}
+              style={{ paddingLeft: '2.75rem', borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
               placeholder="Parça kodu, adı, raf yeri veya barkod ile detaylı arama..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+            <button 
+              type="button" 
+              className="btn btn-secondary" 
+              style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeft: 'none', padding: '0 1rem' }}
+              onClick={() => setScannerOpen(true)}
+              title="Kamerayla Barkod Okut"
+            >
+              <Camera size={20} />
+            </button>
           </div>
           <button type="submit" className="btn btn-secondary">
             Filtrele
@@ -166,6 +277,17 @@ export default function Stocks() {
                   <td style={{ fontWeight: 600 }}>₺{stock.price.toLocaleString('tr-TR')}</td>
                   <td style={{ textAlign: 'right' }}>
                     <div className="flex justify-end gap-2">
+                      <button 
+                        className="btn btn-secondary" 
+                        style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}
+                        onClick={() => {
+                          setSelectedStockForBarcode(stock);
+                          setBarcodeModalOpen(true);
+                        }}
+                        title="Barkod Yazdır"
+                      >
+                        <Printer size={16} />
+                      </button>
                       {stock.original_part_number && (
                         <button 
                           className="btn btn-secondary" 
@@ -201,7 +323,54 @@ export default function Stocks() {
         ) : (
           <div className="text-center" style={{ padding: '4rem', color: 'var(--color-text-muted)' }}>
             <Box size={48} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
-            <p>Aramanıza uygun stok bulunamadı.</p>
+            <p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Aramanıza uygun stok bulunamadı.</p>
+            
+            {/* Bunu mu demek istediniz? (Öneriler) */}
+            {isLoadingSuggestions && (
+              <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>Alternatif ürünler aranıyor...</div>
+            )}
+            {!isLoadingSuggestions && suggestions && suggestions.length > 0 && (
+              <div className="suggestions-container" style={{ 
+                marginTop: '1.5rem', 
+                padding: '1.5rem', 
+                background: 'rgba(var(--color-primary-rgb), 0.05)', 
+                borderRadius: 'var(--radius-lg)',
+                border: '1px solid rgba(var(--color-primary-rgb), 0.1)',
+                display: 'inline-block',
+                textAlign: 'left',
+                maxWidth: '600px',
+                width: '100%'
+              }}>
+                <div className="flex items-center gap-2 mb-3 text-primary font-bold">
+                  <HelpCircle size={18} />
+                  <span>Bunu mu demek istediniz?</span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {suggestions.map(s => (
+                    <button 
+                      key={s.id}
+                      onClick={() => setSearchParams({ q: s.part_code })}
+                      className="btn"
+                      style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between',
+                        background: 'var(--color-surface)',
+                        border: '1px solid var(--color-border)',
+                        padding: '0.75rem 1rem',
+                        textAlign: 'left',
+                        width: '100%'
+                      }}
+                    >
+                      <div>
+                        <span className="font-bold text-primary mr-2">{s.part_code}</span>
+                        <span>{s.part_name}</span>
+                      </div>
+                      {s.brand && <span className="text-muted" style={{ fontSize: '0.8rem' }}>{s.brand}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -276,6 +445,25 @@ export default function Stocks() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Barcode Print Modal */}
+      {barcodeModalOpen && selectedStockForBarcode && (
+        <BarcodeModal 
+          stock={selectedStockForBarcode} 
+          onClose={() => {
+            setBarcodeModalOpen(false);
+            setSelectedStockForBarcode(null);
+          }} 
+        />
+      )}
+
+      {/* Barcode Scanner Modal */}
+      {scannerOpen && (
+        <BarcodeScannerModal 
+          onClose={() => setScannerOpen(false)}
+          onScan={handleScan}
+        />
       )}
     </div>
   );
