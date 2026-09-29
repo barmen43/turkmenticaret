@@ -196,6 +196,13 @@ export default function StockForm() {
     }
   };
 
+  const handleKeyDownCheck = (e, field, value) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleCheckDuplicate(field, value);
+    }
+  };
+
   const handleChange = (e) => {
     const { name, value, type } = e.target;
     let val = type === 'number' ? (value === '' ? '' : Number(value)) : value;
@@ -384,6 +391,7 @@ export default function StockForm() {
                 value={formData.part_code} 
                 onChange={handleChange} 
                 onBlur={(e) => handleCheckDuplicate('part_code', e.target.value)}
+                onKeyDown={(e) => handleKeyDownCheck(e, 'part_code', e.target.value)}
                 className="form-input" 
                 required 
               />
@@ -542,6 +550,7 @@ export default function StockForm() {
                 value={formData.barcode} 
                 onChange={handleChange} 
                 onBlur={(e) => handleCheckDuplicate('barcode', e.target.value)}
+                onKeyDown={(e) => handleKeyDownCheck(e, 'barcode', e.target.value)}
                 className="form-input" 
                 placeholder="Okutun veya oluşturun..." 
               />
