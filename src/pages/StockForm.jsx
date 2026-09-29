@@ -203,16 +203,22 @@ export default function StockForm() {
     try {
       let stockId = id;
 
+      const payload = { ...formData };
+      if (payload.quantity === '') payload.quantity = 0;
+      if (payload.price === '') payload.price = 0;
+      if (payload.buying_price === '') payload.buying_price = 0;
+      if (payload.min_stock_warning === '') payload.min_stock_warning = 0;
+
       if (isEditing) {
         const { error: updateError } = await supabase
           .from('stocks')
-          .update({ ...formData, updated_at: new Date().toISOString() })
+          .update({ ...payload, updated_at: new Date().toISOString() })
           .eq('id', id);
         if (updateError) throw updateError;
       } else {
         const { data: newStock, error: insertError } = await supabase
           .from('stocks')
-          .insert([formData])
+          .insert([payload])
           .select('id')
           .single();
         if (insertError) throw insertError;
