@@ -32,7 +32,13 @@ export default function BarcodeScannerModal({ onClose, onScan }) {
           startPromiseRef.current = html5QrCode.start(
             { facingMode: "environment" },
             {
-              fps: 15,
+              fps: 30,
+              qrbox: { width: 250, height: 150 },
+              aspectRatio: 1.0,
+              videoConstraints: {
+                focusMode: "continuous",
+                advanced: [{ zoom: 1.5 }] // Hafif yakınlaştırma odaklamayı kolaylaştırabilir
+              },
               formatsToSupport: [
                 Html5QrcodeSupportedFormats.EAN_13,
                 Html5QrcodeSupportedFormats.EAN_8,
