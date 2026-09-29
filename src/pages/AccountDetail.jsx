@@ -350,12 +350,15 @@ export default function AccountDetail() {
                   </td>
                   <td className="sticky-right" style={{ textAlign: 'right' }}>
                     <div className="flex justify-end gap-2">
-                      {tx.description && tx.description.includes('Sipariş: ') && (
+                      {tx.description && (tx.description.includes('Sipariş: ') || tx.description.includes('İade: ')) && (
                         <button 
                           className="btn btn-secondary" 
                           style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} 
-                          onClick={() => setSelectedSalePrefix(tx.description.match(/Sipariş: ([a-f0-9\-]{8})/)?.[1])} 
-                          title="Fiş / Satış Detayını Gör"
+                          onClick={() => {
+                            const match = tx.description.match(/(?:Sipariş|İade):\s([a-f0-9\-]{8})/);
+                            if (match) setSelectedSalePrefix(match[1]);
+                          }} 
+                          title="Fiş / İşlem Detayını Gör"
                         >
                           <Search size={14} className="text-primary" />
                         </button>

@@ -18,6 +18,7 @@ import AccountForm from './pages/AccountForm';
 import AccountDetail from './pages/AccountDetail';
 import Checks from './pages/Checks';
 import POS from './pages/POS';
+import Returns from './pages/Returns';
 import './index.css';
 
 createRoot(document.getElementById('root')).render(
@@ -57,6 +58,7 @@ createRoot(document.getElementById('root')).render(
                 <Route path="cari-detay/:id" element={<AccountDetail />} />
                 <Route path="cekler" element={<Checks />} />
                 <Route path="satis" element={<POS />} />
+                <Route path="iade" element={<Returns />} />
               </Route>
             </Routes>
           </AuthProvider>
