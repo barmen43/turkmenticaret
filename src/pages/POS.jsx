@@ -105,6 +105,15 @@ export default function POS() {
     }));
   };
 
+  const updatePrice = (id, newPrice) => {
+    setCart(prev => prev.map(item => {
+      if (item.id === id) {
+        return { ...item, price: newPrice };
+      }
+      return item;
+    }));
+  };
+
   const removeFromCart = (id) => {
     setCart(prev => prev.filter(item => item.id !== id));
   };
@@ -290,7 +299,19 @@ export default function POS() {
                   <div key={item.id} style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
                     <div style={{ flex: 1 }}>
                       <div className="font-bold">{item.part_name}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Birim Fiyat: ₺{Number(item.price).toFixed(2)}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
+                        Birim Fiyat: ₺
+                        <input
+                          type="number"
+                          className="form-input"
+                          style={{ padding: '0.1rem 0.5rem', fontSize: '0.9rem', width: '80px', height: '24px' }}
+                          value={item.price === '' ? '' : item.price}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            updatePrice(item.id, val === '' ? '' : Number(val));
+                          }}
+                        />
+                      </div>
                     </div>
                     
                     {/* Miktar Kontrolleri */}

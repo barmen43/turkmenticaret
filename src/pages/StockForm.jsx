@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Save, X, ArrowLeft, RefreshCw, Camera } from 'lucide-react';
+import { Save, X, ArrowLeft, RefreshCw, Camera, ListPlus, Trash2 } from 'lucide-react';
 import CreatableSelect from 'react-select/creatable';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
@@ -45,6 +45,7 @@ export default function StockForm() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [draftItems, setDraftItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [originalPartNumbers, setOriginalPartNumbers] = useState([]);
   const [brands, setBrands] = useState([]);
@@ -195,6 +196,24 @@ export default function StockForm() {
     }));
   };
 
+  const handleAddToList = () => {
+    if (!formData.part_code || !formData.part_name || formData.quantity <= 0 || formData.price <= 0) {
+      alert("Listeye eklemeden önce zorunlu alanları (Parça Kodu, Ürün Adı, Miktar, Satış Fiyatı) doldurmalısınız.");
+      return;
+    }
+    setDraftItems(prev => [...prev, { ...formData }]);
+    setFormData(prev => ({
+      ...prev,
+      part_code: '',
+      part_name: '',
+      description: '',
+      barcode: '',
+      quantity: 0,
+      price: 0,
+      buying_price: 0
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -216,13 +235,21 @@ export default function StockForm() {
           .eq('id', id);
         if (updateError) throw updateError;
       } else {
-        const { data: newStock, error: insertError } = await supabase
+        const itemsToSave = [...draftItems];
+        if (payload.part_name && payload.part_code) {
+          itemsToSave.push(payload);
+        }
+        
+        if (itemsToSave.length === 0) {
+          throw new Error("Kaydedilecek ürün bulunamadı!");
+        }
+
+        const { data: newStocks, error: insertError } = await supabase
           .from('stocks')
-          .insert([payload])
-          .select('id')
-          .single();
+          .insert(itemsToSave)
+          .select('id');
         if (insertError) throw insertError;
-        if (newStock) stockId = newStock.id;
+        if (newStocks && newStocks.length > 0) stockId = newStocks[0].id;
       }
 
       // Muhasebe Kaydı İşlemleri
@@ -308,7 +335,7 @@ export default function StockForm() {
 
             <div className="form-group">
               <label className="form-label">Parça Adı *</label>
-              <input type="text" name="part_name" value={formData.part_name} onChange={handleChange} className="form-input" required />
+              <input type="text" name="part_name" value={formData.part_name} onChange={handleChange} className="form-input" required={draftItems.length === 0} />
             </div>
 
             <div className="form-group">
@@ -396,7 +423,7 @@ export default function StockForm() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="form-group">
                 <label className="form-label">Miktar *</label>
-                <input type="number" name="quantity" value={formData.quantity} onChange={handleChange} className="form-input" required min="0" />
+                <input type="number" name="quantity" value={formData.quantity} onChange={handleChange} className="form-input" required={draftItems.length === 0} min="0" />
               </div>
               <div className="form-group">
                 <label className="form-label">Min. Stok Uyarısı</label>
@@ -411,7 +438,7 @@ export default function StockForm() {
               </div>
               <div className="form-group">
                 <label className="form-label">Birim Satış Fiyatı (₺) *</label>
-                <input type="number" name="price" value={formData.price} onChange={handleChange} className="form-input" required min="0" step="0.01" />
+                <input type="number" name="price" value={formData.price} onChange={handleChange} className="form-input" required={draftItems.length === 0} min="0" step="0.01" />
               </div>
             </div>
 
@@ -461,6 +488,26 @@ export default function StockForm() {
               <input type="text" name="supplier" value={formData.supplier} onChange={handleChange} className="form-input" placeholder="Örn: Bosch, Valeo..." />
             </div>
 
+            
+            {!isEditing && draftItems.length > 0 && (
+              <div className="glass-panel mt-4 animate-fade-in" style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                <h4 style={{ margin: '0 0 1rem 0', color: 'var(--color-primary)', fontSize: '1.1rem' }}>Eklenecek Ürünler Listesi ({draftItems.length} Ürün)</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {draftItems.map((item, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius-sm)' }}>
+                      <div>
+                        <div className="font-bold">{item.part_name} <span style={{fontSize: '0.8rem', color: 'var(--color-text-muted)'}}>({item.part_code})</span></div>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Miktar: {item.quantity} | Alış: ₺{item.buying_price}</div>
+                      </div>
+                      <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem', color: 'var(--color-danger)' }} onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
             <div className="glass-panel mt-4" style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--color-border)' }}>
               <h4 style={{ margin: '0 0 1rem 0', color: 'var(--color-primary)', fontSize: '1.1rem' }}>Muhasebe / Cari İşlemi</h4>
               
@@ -472,9 +519,11 @@ export default function StockForm() {
                   checked={transaction.log_transaction} 
                   onChange={(e) => {
                     handleTransactionChange(e);
-                    if (e.target.checked && transaction.amount === 0) {
+                    if (e.target.checked) {
                       // Otomatik tutar hesapla
-                      setTransaction(prev => ({ ...prev, amount: formData.quantity * formData.buying_price }));
+                      const currentAmount = (formData.quantity * formData.buying_price) || 0;
+                      const draftAmount = draftItems.reduce((sum, item) => sum + ((item.quantity * item.buying_price) || 0), 0);
+                      setTransaction(prev => ({ ...prev, amount: currentAmount + draftAmount }));
                     }
                   }} 
                   style={{ width: '18px', height: '18px' }} 
@@ -524,7 +573,14 @@ export default function StockForm() {
           
         </div>
 
+        
         <div className="flex justify-end gap-4 mt-6" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1.5rem' }}>
+          {!isEditing && (
+            <button type="button" className="btn btn-secondary" onClick={handleAddToList} style={{ marginRight: 'auto', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'var(--color-danger)' }}>
+              <ListPlus size={18} />
+              Listeye Ekle (Başka Ürün Gir)
+            </button>
+          )}
           <button type="button" className="btn btn-secondary" onClick={() => navigate(-1)}>
             <X size={18} />
             İptal
