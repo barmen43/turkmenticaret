@@ -245,7 +245,7 @@ export default function Returns() {
       )}
 
       {/* Üst Alan: Arama ve Barkod */}
-      <div className="glass-panel p-4 flex flex-wrap gap-4 items-center">
+      <div className="glass-panel p-4 flex flex-wrap gap-4 items-center" style={{ position: 'relative', zIndex: 20 }}>
         <form onSubmit={handleBarcodeSubmit} style={{ flex: '1 1 300px', position: 'relative' }}>
           <Search style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} size={20} />
           <input 
