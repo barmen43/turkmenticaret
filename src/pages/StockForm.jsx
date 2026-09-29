@@ -157,11 +157,13 @@ export default function StockForm() {
   const handleCheckDuplicate = async (field, value) => {
     if (isEditing || !value) return; // Sadece yeni kayıt eklerken kontrol et
 
-    const { data, error } = await supabase
+    const { data: results, error } = await supabase
       .from('stocks')
       .select('id, part_name')
       .eq(field, value)
-      .maybeSingle();
+      .limit(1);
+
+    const data = results?.[0];
 
     if (data) {
       const fieldName = field === 'part_code' ? 'Parça Koduna' : 'Barkoda';
