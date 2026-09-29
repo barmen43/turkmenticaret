@@ -1,62 +1,142 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { X, Camera } from 'lucide-react';
 
 export default function BarcodeScannerModal({ onClose, onScan }) {
   const [error, setError] = useState('');
   const [isStarted, setIsStarted] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const scannerRef = useRef(null);
+  const startPromiseRef = useRef(null);
   
   useEffect(() => {
-    let html5QrCode;
+    let isMounted = true;
+    let html5QrCode = null;
 
-    const startScanner = async () => {
-      html5QrCode = new Html5Qrcode("reader");
-      
-      try {
-        await html5QrCode.start(
-          { facingMode: "environment" },
-          {
-            fps: 15,
-            formatsToSupport: [
-              Html5QrcodeSupportedFormats.EAN_13,
-              Html5QrcodeSupportedFormats.EAN_8,
-              Html5QrcodeSupportedFormats.CODE_128,
-              Html5QrcodeSupportedFormats.CODE_39,
-              Html5QrcodeSupportedFormats.UPC_A,
-              Html5QrcodeSupportedFormats.UPC_E,
-              Html5QrcodeSupportedFormats.QR_CODE
-            ]
-          },
-          (decodedText, decodedResult) => {
-            // Başarılı okuma
-            html5QrCode.stop().then(() => {
-              onScan(decodedText);
-              onClose();
-            }).catch(err => {
-              // Hata olursa da yine de kapat
-              onScan(decodedText);
-              onClose();
-            });
-          },
-          (errorMessage) => {
-            // Sürekli tarama hatalarını yoksay
-          }
-        );
-        setIsStarted(true);
-      } catch (err) {
-        console.error("Kamera başlatılamadı:", err);
-        setError("Kamera başlatılamadı. Lütfen tarayıcınızın kamera izni verdiğinden emin olun.");
+    // React Strict Mode'un neden olduğu anlık çift yüklemeyi atlatmak için
+    // başlatmayı kısa bir süre geciktiriyoruz.
+    const initTimeout = setTimeout(() => {
+      if (!isMounted) return;
+
+      // Her ihtimale karşı içini temizleyelim
+      const readerElement = document.getElementById("reader");
+      if (readerElement) {
+        readerElement.innerHTML = '';
       }
-    };
 
-    startScanner();
+      html5QrCode = new Html5Qrcode("reader");
+      scannerRef.current = html5QrCode;
+
+      const startScanner = async () => {
+        try {
+          startPromiseRef.current = html5QrCode.start(
+            { facingMode: "environment" },
+            {
+              fps: 15,
+              formatsToSupport: [
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.CODE_39,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E,
+                Html5QrcodeSupportedFormats.QR_CODE
+              ]
+            },
+            (decodedText) => {
+              if (isMounted) {
+                handleScanSuccess(decodedText);
+              }
+            },
+            (errorMessage) => {}
+          );
+
+          await startPromiseRef.current;
+          
+          if (isMounted) {
+            setIsStarted(true);
+          }
+        } catch (err) {
+          if (isMounted) {
+            console.error("Kamera başlatılamadı:", err);
+            setError("Kamera başlatılamadı. Lütfen tarayıcınızın kamera izni verdiğinden emin olun.");
+          }
+        }
+      };
+
+      startScanner();
+    }, 150);
 
     return () => {
-      if (html5QrCode && html5QrCode.isScanning) {
-        html5QrCode.stop().catch(console.error);
+      isMounted = false;
+      clearTimeout(initTimeout);
+
+      if (startPromiseRef.current && html5QrCode) {
+        startPromiseRef.current.then(() => {
+          if (html5QrCode.isScanning) {
+            html5QrCode.stop().then(() => {
+              html5QrCode.clear();
+            }).catch(() => {});
+          } else {
+            html5QrCode.clear();
+          }
+        }).catch(() => {});
+      } else if (html5QrCode) {
+        try { html5QrCode.clear(); } catch(e) {}
       }
     };
-  }, [onClose, onScan]);
+  }, []);
+
+  const handleScanSuccess = (decodedText) => {
+    if (isClosing) return;
+    setIsClosing(true);
+    
+    // Okuma başarılı olunca hemen sesi/titreşimi verdirmek iyi olabilir
+    if (window.navigator && window.navigator.vibrate) {
+      window.navigator.vibrate(100);
+    }
+
+    const forceClose = setTimeout(() => {
+      onScan(decodedText);
+      onClose();
+    }, 500);
+
+    if (scannerRef.current && scannerRef.current.isScanning) {
+      scannerRef.current.stop().then(() => {
+        clearTimeout(forceClose);
+        onScan(decodedText);
+        onClose();
+      }).catch(() => {
+        clearTimeout(forceClose);
+        onScan(decodedText);
+        onClose();
+      });
+    } else {
+      clearTimeout(forceClose);
+      onScan(decodedText);
+      onClose();
+    }
+  };
+
+  const handleManualClose = () => {
+    if (isClosing) return;
+    setIsClosing(true);
+
+    const forceClose = setTimeout(() => onClose(), 500);
+
+    if (scannerRef.current && scannerRef.current.isScanning) {
+      scannerRef.current.stop().then(() => {
+        clearTimeout(forceClose);
+        onClose();
+      }).catch(() => {
+        clearTimeout(forceClose);
+        onClose();
+      });
+    } else {
+      clearTimeout(forceClose);
+      onClose();
+    }
+  };
 
   return (
     <div className="modal-overlay" style={{ zIndex: 9999 }}>
@@ -66,7 +146,7 @@ export default function BarcodeScannerModal({ onClose, onScan }) {
             <Camera size={20} />
             Barkod Okut
           </h3>
-          <button className="modal-close" onClick={onClose} style={{ color: '#333' }}>
+          <button className="modal-close" onClick={handleManualClose} style={{ color: '#333' }} disabled={isClosing}>
             <X size={24} />
           </button>
         </div>
@@ -78,10 +158,10 @@ export default function BarcodeScannerModal({ onClose, onScan }) {
             </div>
           ) : (
             <div style={{ position: 'relative', width: '100%' }}>
-              <div id="reader" style={{ width: '100%', border: 'none' }}></div>
-              {!isStarted && !error && (
-                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'white', textAlign: 'center' }}>
-                  Kamera açılıyor...
+              <div id="reader" style={{ width: '100%', border: 'none', opacity: isClosing ? 0.5 : 1 }}></div>
+              {(!isStarted || isClosing) && !error && (
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'white', textAlign: 'center', background: 'rgba(0,0,0,0.5)', padding: '0.5rem 1rem', borderRadius: '4px' }}>
+                  {isClosing ? 'Kapatılıyor...' : 'Kamera açılıyor...'}
                 </div>
               )}
             </div>

@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Package, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Search, Package, AlertTriangle, TrendingUp, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 
 export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLowStockModalOpen, setIsLowStockModalOpen] = useState(false);
   const navigate = useNavigate();
 
   // Get quick stats
@@ -19,6 +20,17 @@ export default function Dashboard() {
         lowStock: lowStock || 0
       };
     }
+  });
+
+  // Get low stock items
+  const { data: lowStockItems, isLoading: isLoadingLowStock } = useQuery({
+    queryKey: ['low-stock-items'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('stocks').select('*').lt('quantity', 5).order('quantity', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: isLowStockModalOpen
   });
 
   const handleSearch = (e) => {
@@ -69,7 +81,13 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="glass-panel p-4" style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+        <div 
+          className="glass-panel p-4" 
+          style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1.5rem', cursor: 'pointer', transition: 'transform 0.2s', border: '1px solid rgba(239, 68, 68, 0.3)' }}
+          onClick={() => setIsLowStockModalOpen(true)}
+          onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.03)'}
+          onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+        >
           <div style={{ background: 'rgba(239, 68, 68, 0.1)', padding: '1rem', borderRadius: 'var(--radius-lg)' }}>
             <AlertTriangle size={32} color="var(--color-danger)" />
           </div>
@@ -90,6 +108,56 @@ export default function Dashboard() {
         </div>
 
       </div>
+
+      {/* Low Stock Modal */}
+      {isLowStockModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsLowStockModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-danger)' }}>
+                <AlertTriangle size={24} /> Kritik Stok Seviyesindeki Ürünler
+              </h3>
+              <button className="modal-close" onClick={() => setIsLowStockModalOpen(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            <div className="modal-body">
+              {isLoadingLowStock ? (
+                <p className="text-center text-muted">Yükleniyor...</p>
+              ) : lowStockItems && lowStockItems.length > 0 ? (
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Parça Kodu</th>
+                        <th>Parça Adı</th>
+                        <th>Marka</th>
+                        <th>Miktar</th>
+                        <th>Raf</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lowStockItems.map(item => (
+                        <tr key={item.id}>
+                          <td className="font-bold">{item.part_code}</td>
+                          <td>{item.part_name}</td>
+                          <td>{item.brand}</td>
+                          <td>
+                            <span className="badge badge-danger" style={{ fontSize: '0.9rem' }}>{item.quantity}</span>
+                          </td>
+                          <td>{item.shelf_location || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-center text-muted">Kritik stok seviyesinde ürün bulunmamaktadır.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

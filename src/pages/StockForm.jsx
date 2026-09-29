@@ -65,8 +65,19 @@ export default function StockForm() {
     supplier: '',
     min_stock_warning: 5,
     barcode: '',
-    part_type: 'Orijinal'
+    part_type: 'Orijinal',
+    buying_price: 0
   });
+
+  const [transaction, setTransaction] = useState({
+    log_transaction: false,
+    supplier_id: '',
+    payment_method: 'Veresiye',
+    amount: 0,
+    check_due_date: ''
+  });
+
+  const [suppliers, setSuppliers] = useState([]);
 
   const [scannerOpen, setScannerOpen] = useState(false);
 
@@ -80,17 +91,19 @@ export default function StockForm() {
   const loadOptions = async () => {
     setIsLoadingOptions(true);
     
-    const [catRes, opnRes, brandRes, vbRes] = await Promise.all([
+    const [catRes, opnRes, brandRes, vbRes, supRes] = await Promise.all([
       supabase.from('categories').select('name').order('name'),
       supabase.from('original_part_numbers').select('name').order('name'),
       supabase.from('brands').select('name').order('name'),
-      supabase.from('vehicle_brands').select('name').order('name')
+      supabase.from('vehicle_brands').select('name').order('name'),
+      supabase.from('accounts').select('id, name').eq('account_type', 'Tedarikçi').order('name')
     ]);
 
     if (!catRes.error && catRes.data) setCategories(catRes.data.map(c => ({ value: c.name, label: c.name })));
     if (!opnRes.error && opnRes.data) setOriginalPartNumbers(opnRes.data.map(c => ({ value: c.name, label: c.name })));
     if (!brandRes.error && brandRes.data) setBrands(brandRes.data.map(c => ({ value: c.name, label: c.name })));
     if (!vbRes.error && vbRes.data) setVehicleBrands(vbRes.data.map(c => ({ value: c.name, label: c.name })));
+    if (!supRes.error && supRes.data) setSuppliers(supRes.data);
 
     setIsLoadingOptions(false);
   };
@@ -131,8 +144,29 @@ export default function StockForm() {
         supplier: data.supplier || '',
         min_stock_warning: data.min_stock_warning || 5,
         barcode: data.barcode || '',
-        part_type: data.part_type || 'Orijinal'
+        part_type: data.part_type || 'Orijinal',
+        buying_price: data.buying_price || 0
       });
+    }
+  };
+
+  const handleCheckDuplicate = async (field, value) => {
+    if (isEditing || !value) return; // Sadece yeni kayıt eklerken kontrol et
+
+    const { data, error } = await supabase
+      .from('stocks')
+      .select('id, part_name')
+      .eq(field, value)
+      .maybeSingle();
+
+    if (data) {
+      const fieldName = field === 'part_code' ? 'Parça Koduna' : 'Barkoda';
+      if (window.confirm(`Sistemde bu ${fieldName} sahip bir ürün zaten var:\n"${data.part_name}"\n\nMükerrer kayıt olmaması için mevcut ürünü düzenlemek/stoğunu arttırmak ister misiniz?`)) {
+        navigate(`/portal/stok-duzenle/${data.id}`, { replace: true });
+      } else {
+        // İstemezse alanı temizle
+        setFormData(prev => ({ ...prev, [field]: '' }));
+      }
     }
   };
 
@@ -141,6 +175,14 @@ export default function StockForm() {
     setFormData(prev => ({
       ...prev,
       [name]: type === 'number' ? Number(value) : value
+    }));
+  };
+
+  const handleTransactionChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setTransaction(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : (type === 'number' ? Number(value) : value)
     }));
   };
 
@@ -159,6 +201,8 @@ export default function StockForm() {
     setError('');
 
     try {
+      let stockId = id;
+
       if (isEditing) {
         const { error: updateError } = await supabase
           .from('stocks')
@@ -166,10 +210,47 @@ export default function StockForm() {
           .eq('id', id);
         if (updateError) throw updateError;
       } else {
-        const { error: insertError } = await supabase
+        const { data: newStock, error: insertError } = await supabase
           .from('stocks')
-          .insert([formData]);
+          .insert([formData])
+          .select('id')
+          .single();
         if (insertError) throw insertError;
+        if (newStock) stockId = newStock.id;
+      }
+
+      // Muhasebe Kaydı İşlemleri
+      if (transaction.log_transaction && transaction.supplier_id && transaction.amount > 0) {
+        if (transaction.payment_method === 'Veresiye') {
+          // Cari hesaba Alacak yaz
+          const { error: txError } = await supabase.from('transactions').insert([{
+            account_id: transaction.supplier_id,
+            transaction_type: 'Alacak', // Tedarikçiye borçlandık, onun bizden alacağı var
+            amount: transaction.amount,
+            payment_method: 'Veresiye',
+            transaction_date: new Date().toISOString(),
+            description: `Ürün Girişi: ${formData.part_code || formData.part_name}`
+          }]);
+          if (txError) throw txError;
+        } 
+        else if (transaction.payment_method === 'Çek / Senet') {
+          if (!transaction.check_due_date) {
+            throw new Error('Çek/Senet için vade tarihi girmelisiniz!');
+          }
+          // Çek/Senet tablosuna kaydet
+          const { error: checkError } = await supabase.from('checks').insert([{
+            type: 'Senet', // Varsayılan olarak Senet (veya firma çeki)
+            check_number: `STK-${stockId?.slice(0,6) || Math.floor(Math.random()*1000)}`,
+            bank_name: '-',
+            owner_name: 'Firmamız', // Kendi çekimiz/senedimiz
+            due_date: transaction.check_due_date,
+            amount: transaction.amount,
+            given_to: transaction.supplier_id,
+            status: 'Verildi' // Tedarikçiye verildi
+          }]);
+          if (checkError) throw checkError;
+        }
+        // Nakit veya K.Kartı seçildiyse doğrudan ödenmiş kabul edilir, ekstra borç kaydı atılmaz.
       }
       
       navigate('/portal/stoklar');
@@ -208,7 +289,15 @@ export default function StockForm() {
             
             <div className="form-group">
               <label className="form-label">Parça Kodu *</label>
-              <input type="text" name="part_code" value={formData.part_code} onChange={handleChange} className="form-input" required />
+              <input 
+                type="text" 
+                name="part_code" 
+                value={formData.part_code} 
+                onChange={handleChange} 
+                onBlur={(e) => handleCheckDuplicate('part_code', e.target.value)}
+                className="form-input" 
+                required 
+              />
             </div>
 
             <div className="form-group">
@@ -309,9 +398,15 @@ export default function StockForm() {
               </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Birim Fiyatı (₺) *</label>
-              <input type="number" name="price" value={formData.price} onChange={handleChange} className="form-input" required min="0" step="0.01" />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label">Birim Alış Fiyatı (₺)</label>
+                <input type="number" name="buying_price" value={formData.buying_price} onChange={handleChange} className="form-input" min="0" step="0.01" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Birim Satış Fiyatı (₺) *</label>
+                <input type="number" name="price" value={formData.price} onChange={handleChange} className="form-input" required min="0" step="0.01" />
+              </div>
             </div>
 
             <div className="form-group">
@@ -344,12 +439,80 @@ export default function StockForm() {
                   </button>
                 </div>
               </label>
-              <input type="text" name="barcode" value={formData.barcode} onChange={handleChange} className="form-input" placeholder="Okutun veya oluşturun..." />
+              <input 
+                type="text" 
+                name="barcode" 
+                value={formData.barcode} 
+                onChange={handleChange} 
+                onBlur={(e) => handleCheckDuplicate('barcode', e.target.value)}
+                className="form-input" 
+                placeholder="Okutun veya oluşturun..." 
+              />
             </div>
 
             <div className="form-group">
-              <label className="form-label">Tedarikçi Firma</label>
-              <input type="text" name="supplier" value={formData.supplier} onChange={handleChange} className="form-input" />
+              <label className="form-label">Üretici / Marka (Açıklama Amaçlı)</label>
+              <input type="text" name="supplier" value={formData.supplier} onChange={handleChange} className="form-input" placeholder="Örn: Bosch, Valeo..." />
+            </div>
+
+            <div className="glass-panel mt-4" style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--color-border)' }}>
+              <h4 style={{ margin: '0 0 1rem 0', color: 'var(--color-primary)', fontSize: '1.1rem' }}>Muhasebe / Cari İşlemi</h4>
+              
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                <input 
+                  type="checkbox" 
+                  id="log_tx" 
+                  name="log_transaction" 
+                  checked={transaction.log_transaction} 
+                  onChange={(e) => {
+                    handleTransactionChange(e);
+                    if (e.target.checked && transaction.amount === 0) {
+                      // Otomatik tutar hesapla
+                      setTransaction(prev => ({ ...prev, amount: formData.quantity * formData.buying_price }));
+                    }
+                  }} 
+                  style={{ width: '18px', height: '18px' }} 
+                />
+                <label htmlFor="log_tx" style={{ margin: 0, cursor: 'pointer', fontWeight: 'bold' }}>Bu girişi muhasebeye (Cari / Çek) işle</label>
+              </div>
+
+              {transaction.log_transaction && (
+                <div className="animate-fade-in" style={{ display: 'grid', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label className="form-label">Tedarikçi Seçin *</label>
+                    <select name="supplier_id" value={transaction.supplier_id} onChange={handleTransactionChange} className="form-input" required={transaction.log_transaction}>
+                      <option value="">-- Listeden Seçin --</option>
+                      {suppliers.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">İşlenecek Toplam Tutar (₺) *</label>
+                      <input type="number" name="amount" value={transaction.amount} onChange={handleTransactionChange} className="form-input" min="0" step="0.01" required={transaction.log_transaction} />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label className="form-label">Ödeme Tipi *</label>
+                      <select name="payment_method" value={transaction.payment_method} onChange={handleTransactionChange} className="form-input">
+                        <option value="Veresiye">Veresiye (Cariye Borç İşle)</option>
+                        <option value="Çek / Senet">Çek / Senet Ver</option>
+                        <option value="Nakit">Nakit Ödendi (Kayıt Atılmaz)</option>
+                        <option value="Kredi Kartı">Kredi Kartı Ödendi (Kayıt Atılmaz)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {transaction.payment_method === 'Çek / Senet' && (
+                    <div className="form-group animate-fade-in">
+                      <label className="form-label">Vade Tarihi *</label>
+                      <input type="date" name="check_due_date" value={transaction.check_due_date} onChange={handleTransactionChange} className="form-input" required={transaction.payment_method === 'Çek / Senet'} />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           
@@ -372,7 +535,10 @@ export default function StockForm() {
       {scannerOpen && (
         <BarcodeScannerModal 
           onClose={() => setScannerOpen(false)}
-          onScan={(code) => setFormData(prev => ({ ...prev, barcode: code }))}
+          onScan={(code) => {
+            setFormData(prev => ({ ...prev, barcode: code }));
+            handleCheckDuplicate('barcode', code);
+          }}
         />
       )}
     </div>

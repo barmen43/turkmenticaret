@@ -274,9 +274,26 @@ a:hover {
   display: inline-block;
 }
 
+/* Layout Utils */
+.pos-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+@media (min-width: 769px) {
+  .pos-grid {
+    grid-template-columns: 1fr 350px;
+  }
+}
+
 /* Utility */
 .flex { display: flex; }
+.flex-col { flex-direction: column; }
+.flex-wrap { flex-wrap: wrap; }
 .items-center { align-items: center; }
+.justify-center { justify-content: center; }
 .justify-between { justify-content: space-between; }
 .gap-2 { gap: 0.5rem; }
 .gap-4 { gap: 1rem; }
@@ -286,6 +303,14 @@ a:hover {
 .text-center { text-align: center; }
 .text-primary { color: var(--color-primary); }
 .font-bold { font-weight: bold; }
+
+.sticky-right {
+  position: sticky;
+  right: 0;
+  background-color: var(--color-surface);
+  z-index: 2;
+  box-shadow: -2px 0 5px rgba(0,0,0,0.2);
+}
 
 /* Public Site Utilities */
 .hover-text-primary:hover {
@@ -351,5 +376,40 @@ a:hover {
 @keyframes modalPop {
   0% { opacity: 0; transform: scale(0.95) translateY(10px); }
   100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .mobile-header-title {
+    font-size: 1.1rem !important;
+    white-space: nowrap;
+  }
+  .hide-on-mobile {
+    display: none !important;
+  }
+  .mobile-nav-btn {
+    padding: 0.5rem 0.25rem !important;
+    font-size: 0.75rem !important;
+  }
+  .mobile-nav-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+  .glass-panel-header {
+    margin: 0.5rem !important;
+    padding: 0.75rem 1rem !important;
+  }
+  .desktop-nav {
+    display: none !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .hamburger-btn {
+    display: none !important;
+  }
+  .hamburger-menu-container {
+    display: none !important;
+  }
 }
 
