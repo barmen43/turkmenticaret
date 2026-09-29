@@ -67,7 +67,10 @@ export default function StockForm() {
     min_stock_warning: 5,
     barcode: '',
     part_type: 'Orijinal',
-    buying_price: 0
+    buying_price: 0,
+    margin: '',
+    kdv_rate: 20,
+    id: null
   });
 
   const [transaction, setTransaction] = useState({
@@ -162,10 +165,32 @@ export default function StockForm() {
 
     if (data) {
       const fieldName = field === 'part_code' ? 'Parça Koduna' : 'Barkoda';
-      if (window.confirm(`Sistemde bu ${fieldName} sahip bir ürün zaten var:\n"${data.part_name}"\n\nMükerrer kayıt olmaması için mevcut ürünü düzenlemek/stoğunu arttırmak ister misiniz?`)) {
-        navigate(`/portal/stok-duzenle/${data.id}`, { replace: true });
+      if (window.confirm(`Sistemde bu ${fieldName} sahip bir ürün zaten var:\n"${data.part_name}"\n\nFaturaya/Listeye eklemek için bilgilerini getireyim mi?`)) {
+        // Fetch full data
+        const { data: fullData } = await supabase.from('stocks').select('*').eq('id', data.id).single();
+        if (fullData) {
+          setFormData(prev => ({
+            ...prev,
+            id: fullData.id,
+            part_code: fullData.part_code || '',
+            part_name: fullData.part_name || '',
+            description: fullData.description || '',
+            price: fullData.price || 0,
+            buying_price: fullData.buying_price || 0,
+            category: fullData.category || '',
+            original_part_number: fullData.original_part_number || '',
+            brand: fullData.brand || '',
+            vehicle_brand: fullData.vehicle_brand || '',
+            shelf_location: fullData.shelf_location || '',
+            supplier: fullData.supplier || '',
+            min_stock_warning: fullData.min_stock_warning || 5,
+            barcode: fullData.barcode || '',
+            quantity: '', // Miktarı boş bırakıyoruz ki faturadaki adeti girsin
+            margin: '',
+            kdv_rate: 20
+          }));
+        }
       } else {
-        // İstemezse alanı temizle
         setFormData(prev => ({ ...prev, [field]: '' }));
       }
     }
@@ -173,10 +198,24 @@ export default function StockForm() {
 
   const handleChange = (e) => {
     const { name, value, type } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'number' ? (value === '' ? '' : Number(value)) : value
-    }));
+    let val = type === 'number' ? (value === '' ? '' : Number(value)) : value;
+    
+    setFormData(prev => {
+      let newState = { ...prev, [name]: val };
+      if (name === 'buying_price' && prev.margin) {
+         newState.price = Number(val) + (Number(val) * Number(prev.margin) / 100);
+      }
+      return newState;
+    });
+  };
+
+  const handleMarginChange = (e) => {
+    const marginVal = e.target.value === '' ? '' : Number(e.target.value);
+    setFormData(prev => {
+      const buying = Number(prev.buying_price) || 0;
+      const newPrice = marginVal !== '' ? buying + (buying * marginVal / 100) : prev.price;
+      return { ...prev, margin: marginVal, price: newPrice };
+    });
   };
 
   const handleTransactionChange = (e) => {
@@ -210,7 +249,10 @@ export default function StockForm() {
       barcode: '',
       quantity: 0,
       price: 0,
-      buying_price: 0
+      buying_price: 0,
+      id: null,
+      margin: '',
+      kdv_rate: 20
     }));
   };
 
@@ -244,12 +286,26 @@ export default function StockForm() {
           throw new Error("Kaydedilecek ürün bulunamadı!");
         }
 
-        const { data: newStocks, error: insertError } = await supabase
-          .from('stocks')
-          .insert(itemsToSave)
-          .select('id');
-        if (insertError) throw insertError;
-        if (newStocks && newStocks.length > 0) stockId = newStocks[0].id;
+        for (let item of itemsToSave) {
+          if (item.id) {
+             // Var olan ürünü güncelle (stoğu artır)
+             const { data: currentStock } = await supabase.from('stocks').select('quantity').eq('id', item.id).single();
+             const newQuantity = (currentStock?.quantity || 0) + Number(item.quantity);
+             
+             const { id: itemId, margin, kdv_rate, ...updateData } = item;
+             updateData.quantity = newQuantity;
+             updateData.updated_at = new Date().toISOString();
+             
+             const { error: updErr } = await supabase.from('stocks').update(updateData).eq('id', item.id);
+             if (updErr) throw updErr;
+          } else {
+             // Yeni ürün ekle
+             const { id: itemId, margin, kdv_rate, ...insertData } = item;
+             const { data: insData, error: insErr } = await supabase.from('stocks').insert([insertData]).select('id').single();
+             if (insErr) throw insErr;
+             if (!stockId && insData) stockId = insData.id;
+          }
+        }
       }
 
       // Muhasebe Kaydı İşlemleri
@@ -431,13 +487,21 @@ export default function StockForm() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem' }}>
               <div className="form-group">
-                <label className="form-label">Birim Alış Fiyatı (₺)</label>
+                <label className="form-label">Alış Fiyatı (₺)</label>
                 <input type="number" name="buying_price" value={formData.buying_price} onChange={handleChange} className="form-input" min="0" step="0.01" />
               </div>
               <div className="form-group">
-                <label className="form-label">Birim Satış Fiyatı (₺) *</label>
+                <label className="form-label">KDV Oranı (%)</label>
+                <input type="number" name="kdv_rate" value={formData.kdv_rate} onChange={handleChange} className="form-input" min="0" />
+              </div>
+              <div className="form-group">
+                <label className="form-label text-success">Kâr Marjı (%)</label>
+                <input type="number" name="margin" value={formData.margin} onChange={handleMarginChange} className="form-input" min="0" placeholder="Örn: 20" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Satış Fiyatı (₺) *</label>
                 <input type="number" name="price" value={formData.price} onChange={handleChange} className="form-input" required={draftItems.length === 0} min="0" step="0.01" />
               </div>
             </div>
@@ -497,7 +561,7 @@ export default function StockForm() {
                     <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius-sm)' }}>
                       <div>
                         <div className="font-bold">{item.part_name} <span style={{fontSize: '0.8rem', color: 'var(--color-text-muted)'}}>({item.part_code})</span></div>
-                        <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Miktar: {item.quantity} | Alış: ₺{item.buying_price}</div>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Miktar: {item.quantity} | Alış: ₺{item.buying_price} + %{item.kdv_rate || 0} KDV</div>
                       </div>
                       <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem', color: 'var(--color-danger)' }} onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}>
                         <Trash2 size={16} />
@@ -521,8 +585,8 @@ export default function StockForm() {
                     handleTransactionChange(e);
                     if (e.target.checked) {
                       // Otomatik tutar hesapla
-                      const currentAmount = (formData.quantity * formData.buying_price) || 0;
-                      const draftAmount = draftItems.reduce((sum, item) => sum + ((item.quantity * item.buying_price) || 0), 0);
+                      const currentAmount = ((formData.quantity || 0) * (formData.buying_price || 0)) * (1 + ((formData.kdv_rate || 0) / 100));
+                      const draftAmount = draftItems.reduce((sum, item) => sum + (((item.quantity || 0) * (item.buying_price || 0)) * (1 + ((item.kdv_rate || 0) / 100))), 0);
                       setTransaction(prev => ({ ...prev, amount: currentAmount + draftAmount }));
                     }
                   }} 
