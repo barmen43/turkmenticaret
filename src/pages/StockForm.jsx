@@ -44,6 +44,7 @@ export default function StockForm() {
   };
 
   const [loading, setLoading] = useState(false);
+  const [fetchingProduct, setFetchingProduct] = useState(false);
   const [error, setError] = useState('');
   const [draftItems, setDraftItems] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -157,6 +158,7 @@ export default function StockForm() {
   const handleCheckDuplicate = async (field, value) => {
     if (isEditing || !value) return;
 
+    setFetchingProduct(true);
     try {
       const { data: results, error } = await supabase
         .from('stocks')
@@ -166,50 +168,51 @@ export default function StockForm() {
 
       if (error) {
         alert("Sorgu hatası: " + error.message);
+        setFetchingProduct(false);
         return;
       }
 
       const data = results?.[0];
 
       if (data) {
-        const fieldName = field === 'part_code' ? 'Parça Koduna' : 'Barkoda';
-        if (window.confirm(`Sistemde bu ${fieldName} sahip bir ürün zaten var:\n"${data.part_name}"\n\nFaturaya/Listeye eklemek için bilgilerini getireyim mi?`)) {
-          const { data: fullData, error: fullError } = await supabase.from('stocks').select('*').eq('id', data.id).single();
-          if (fullError) {
-             alert("Detaylar alınamadı: " + fullError.message);
-             return;
-          }
-          if (fullData) {
-            setFormData(prev => ({
-              ...prev,
-              id: fullData.id,
-              part_code: fullData.part_code || '',
-              part_name: fullData.part_name || '',
-              description: fullData.description || '',
-              price: fullData.price || 0,
-              buying_price: fullData.buying_price || 0,
-              category: fullData.category || '',
-              original_part_number: fullData.original_part_number || '',
-              brand: fullData.brand || '',
-              vehicle_brand: fullData.vehicle_brand || '',
-              shelf_location: fullData.shelf_location || '',
-              supplier: fullData.supplier || '',
-              min_stock_warning: fullData.min_stock_warning || 5,
-              barcode: fullData.barcode || '',
-              quantity: '', // Miktarı boş bırakıyoruz ki faturadaki adeti girsin
-              margin: '',
-              kdv_rate: 20
-            }));
-          }
-        } else {
-          setFormData(prev => ({ ...prev, [field]: '' }));
+        // Otomatik olarak ürünü getir
+        const { data: fullData, error: fullError } = await supabase.from('stocks').select('*').eq('id', data.id).single();
+        if (fullError) {
+            alert("Detaylar alınamadı: " + fullError.message);
+            setFetchingProduct(false);
+            return;
+        }
+        if (fullData) {
+          setFormData(prev => ({
+            ...prev,
+            id: fullData.id,
+            part_code: fullData.part_code || '',
+            part_name: fullData.part_name || '',
+            description: fullData.description || '',
+            price: fullData.price || 0,
+            buying_price: fullData.buying_price || 0,
+            category: fullData.category || '',
+            original_part_number: fullData.original_part_number || '',
+            brand: fullData.brand || '',
+            vehicle_brand: fullData.vehicle_brand || '',
+            shelf_location: fullData.shelf_location || '',
+            supplier: fullData.supplier || '',
+            min_stock_warning: fullData.min_stock_warning || 5,
+            barcode: fullData.barcode || '',
+            quantity: '', // Miktarı boş bırakıyoruz ki faturadaki adeti girsin
+            margin: '',
+            kdv_rate: 20
+          }));
+          // alert(`Sistemde var olan ürün (${fullData.part_name}) faturaya eklenebilmesi için getirildi. Lütfen miktar girip listeye ekleyin.`);
         }
       } else {
-         alert(`${value} kodlu ürün bulunamadı. Yeni kayıt olarak devam edebilirsiniz.`);
+         // Eğer Enter'a basıldıysa ve bulunamadıysa uyarı verelim
+         // alert(`${value} kodlu ürün bulunamadı. Yeni kayıt olarak devam edebilirsiniz.`);
       }
     } catch (err) {
       alert("Beklenmeyen hata: " + err.message);
     }
+    setFetchingProduct(false);
   };
 
   const handleKeyDownCheck = (e, field, value) => {
@@ -400,7 +403,10 @@ export default function StockForm() {
             <h3 className="mb-4 text-primary" style={{ fontSize: '1.2rem' }}>Temel Bilgiler</h3>
             
             <div className="form-group">
-              <label className="form-label">Parça Kodu *</label>
+              <label className="form-label flex justify-between items-center">
+                <span>Parça Kodu *</span>
+                {fetchingProduct && <span style={{ fontSize: '0.8rem', color: 'var(--color-primary)' }}>Aranıyor...</span>}
+              </label>
               <input 
                 type="text" 
                 name="part_code" 
