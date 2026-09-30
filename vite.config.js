@@ -13,7 +13,7 @@ export default defineConfig({
         name: 'Turkmen Ticaret Stok Yönetimi',
         short_name: 'Stok Yönetimi',
         description: 'Yedek parça stok takip uygulaması',
-        theme_color: '#f97316', // Orange theme
+        theme_color: '#f97316',
         background_color: '#121212',
         display: 'standalone',
         icons: [
@@ -56,4 +56,19 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('html5-qrcode')) return 'vendor-qrcode';
+            if (id.includes('lucide-react')) return 'vendor-icons';
+            if (id.includes('react')) return 'vendor-react';
+            return 'vendor';
+          }
+        }
+      }
+    }
+  }
 });
