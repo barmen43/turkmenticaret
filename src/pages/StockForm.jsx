@@ -155,46 +155,60 @@ export default function StockForm() {
   };
 
   const handleCheckDuplicate = async (field, value) => {
-    if (isEditing || !value) return; // Sadece yeni kayıt eklerken kontrol et
+    if (isEditing || !value) return;
 
-    const { data: results, error } = await supabase
-      .from('stocks')
-      .select('id, part_name')
-      .eq(field, value)
-      .limit(1);
+    try {
+      const { data: results, error } = await supabase
+        .from('stocks')
+        .select('id, part_name')
+        .eq(field, value)
+        .limit(1);
 
-    const data = results?.[0];
+      if (error) {
+        alert("Sorgu hatası: " + error.message);
+        return;
+      }
 
-    if (data) {
-      const fieldName = field === 'part_code' ? 'Parça Koduna' : 'Barkoda';
-      if (window.confirm(`Sistemde bu ${fieldName} sahip bir ürün zaten var:\n"${data.part_name}"\n\nFaturaya/Listeye eklemek için bilgilerini getireyim mi?`)) {
-        // Fetch full data
-        const { data: fullData } = await supabase.from('stocks').select('*').eq('id', data.id).single();
-        if (fullData) {
-          setFormData(prev => ({
-            ...prev,
-            id: fullData.id,
-            part_code: fullData.part_code || '',
-            part_name: fullData.part_name || '',
-            description: fullData.description || '',
-            price: fullData.price || 0,
-            buying_price: fullData.buying_price || 0,
-            category: fullData.category || '',
-            original_part_number: fullData.original_part_number || '',
-            brand: fullData.brand || '',
-            vehicle_brand: fullData.vehicle_brand || '',
-            shelf_location: fullData.shelf_location || '',
-            supplier: fullData.supplier || '',
-            min_stock_warning: fullData.min_stock_warning || 5,
-            barcode: fullData.barcode || '',
-            quantity: '', // Miktarı boş bırakıyoruz ki faturadaki adeti girsin
-            margin: '',
-            kdv_rate: 20
-          }));
+      const data = results?.[0];
+
+      if (data) {
+        const fieldName = field === 'part_code' ? 'Parça Koduna' : 'Barkoda';
+        if (window.confirm(`Sistemde bu ${fieldName} sahip bir ürün zaten var:\n"${data.part_name}"\n\nFaturaya/Listeye eklemek için bilgilerini getireyim mi?`)) {
+          const { data: fullData, error: fullError } = await supabase.from('stocks').select('*').eq('id', data.id).single();
+          if (fullError) {
+             alert("Detaylar alınamadı: " + fullError.message);
+             return;
+          }
+          if (fullData) {
+            setFormData(prev => ({
+              ...prev,
+              id: fullData.id,
+              part_code: fullData.part_code || '',
+              part_name: fullData.part_name || '',
+              description: fullData.description || '',
+              price: fullData.price || 0,
+              buying_price: fullData.buying_price || 0,
+              category: fullData.category || '',
+              original_part_number: fullData.original_part_number || '',
+              brand: fullData.brand || '',
+              vehicle_brand: fullData.vehicle_brand || '',
+              shelf_location: fullData.shelf_location || '',
+              supplier: fullData.supplier || '',
+              min_stock_warning: fullData.min_stock_warning || 5,
+              barcode: fullData.barcode || '',
+              quantity: '', // Miktarı boş bırakıyoruz ki faturadaki adeti girsin
+              margin: '',
+              kdv_rate: 20
+            }));
+          }
+        } else {
+          setFormData(prev => ({ ...prev, [field]: '' }));
         }
       } else {
-        setFormData(prev => ({ ...prev, [field]: '' }));
+         alert(`${value} kodlu ürün bulunamadı. Yeni kayıt olarak devam edebilirsiniz.`);
       }
+    } catch (err) {
+      alert("Beklenmeyen hata: " + err.message);
     }
   };
 
