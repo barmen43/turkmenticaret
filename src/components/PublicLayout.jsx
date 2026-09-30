@@ -10,10 +10,7 @@ export default function PublicLayout() {
       {/* Public Header */}
       <header className="glass-panel" style={{ position: 'sticky', top: '1rem', zIndex: 100, margin: '1rem', padding: '1rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: 'var(--radius-xl)' }}>
         <div className="flex items-center gap-2">
-          <div style={{ background: 'var(--color-primary)', padding: '0.5rem', borderRadius: '50%' }}>
-            <Package size={24} color="white" />
-          </div>
-          <h1 className="mobile-header-title" style={{ fontSize: '1.25rem', margin: 0 }}>Türkmen Ticaret</h1>
+          <img src="/logo.png" alt="Türkmen Ticaret" style={{ height: '40px', objectFit: 'contain' }} />
         </div>
         
         <nav className="desktop-nav flex items-center gap-6">

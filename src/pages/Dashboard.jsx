@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Package, AlertTriangle, TrendingUp, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import OverdueCustomers from '../components/OverdueCustomers';
 
 export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -108,6 +109,8 @@ export default function Dashboard() {
         </div>
 
       </div>
+
+      <OverdueCustomers />
 
       {/* Low Stock Modal */}
       {isLowStockModalOpen && (

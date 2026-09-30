@@ -20,7 +20,9 @@ export default function AccountForm() {
     tax_office: '',
     tax_number: '',
     address: '',
-    notes: ''
+    notes: '',
+    risk_limit: 0,
+    default_due_days: 0
   });
 
   useEffect(() => {
@@ -153,6 +155,17 @@ export default function AccountForm() {
             <div className="form-group">
               <label className="form-label">Vergi / T.C. Kimlik Numarası</label>
               <input type="text" name="tax_number" value={formData.tax_number} onChange={handleChange} className="form-input" />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label text-danger">Risk Limiti (₺)</label>
+                <input type="number" name="risk_limit" value={formData.risk_limit} onChange={handleChange} className="form-input" min="0" placeholder="Örn: 50000" />
+              </div>
+              <div className="form-group">
+                <label className="form-label text-primary">Vade (Gün)</label>
+                <input type="number" name="default_due_days" value={formData.default_due_days} onChange={handleChange} className="form-input" min="0" placeholder="Örn: 30" />
+              </div>
             </div>
 
             <div className="form-group">

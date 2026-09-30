@@ -30,9 +30,7 @@ export default function Login() {
       <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '400px', padding: '2rem' }}>
         <div className="text-center mb-6">
           <div className="flex items-center justify-center mb-4">
-            <div style={{ background: 'var(--color-primary)', padding: '1rem', borderRadius: '50%', boxShadow: '0 0 20px rgba(249, 115, 22, 0.4)' }}>
-              <Wrench size={32} color="white" />
-            </div>
+            <img src="/logo.png" alt="Türkmen Ticaret" style={{ maxHeight: '80px', objectFit: 'contain', filter: 'drop-shadow(0 0 10px rgba(249, 115, 22, 0.2))' }} />
           </div>
           <h2 style={{ marginBottom: '0.5rem' }}>Sistem Girişi</h2>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>Yetkili personel paneli</p>

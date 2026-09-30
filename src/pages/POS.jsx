@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { ShoppingCart, Search, Trash2, User, CreditCard, Banknote, FileText, CheckCircle, Plus, Minus, Printer } from 'lucide-react';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
 import { printReceipt } from '../lib/printReceipt';
+import { checkCustomerRisk } from '../lib/riskCheck';
 
 export default function POS() {
   const [cart, setCart] = useState([]);
@@ -132,6 +133,32 @@ export default function POS() {
       return;
     }
 
+    if (method === 'Cari Hesaba Yaz' && customerId) {
+      setLoading(true);
+      try {
+        const riskData = await checkCustomerRisk(customerId, totalAmount);
+        
+        let warnings = [];
+        if (riskData.exceedsLimit) {
+          warnings.push(`Müşterinin Risk Limiti (₺${riskData.limit.toLocaleString()}) aşılıyor! Yeni Bakiye: ₺${riskData.newBalance.toLocaleString()}`);
+        }
+        if (riskData.isOverdue) {
+          warnings.push(`Müşterinin vadesi geçeli ${riskData.maxOverdueDays} gün olmuş ödenmemiş borcu var!`);
+        }
+
+        if (warnings.length > 0) {
+          const confirmMsg = warnings.join('\n') + '\n\nYine de satışı onaylıyor musunuz?';
+          if (!window.confirm(confirmMsg)) {
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Risk kontrol hatası:", err);
+      }
+      setLoading(false);
+    }
+
     setLoading(true);
     try {
       // 1. Satış (sales) kaydı oluştur
@@ -184,12 +211,22 @@ export default function POS() {
 
       // 3. Eğer Cari Hesaba yazılıyorsa, işlemlere borç kaydet
       if (method === 'Cari Hesaba Yaz' && customerId) {
+        
+        const { data: cData } = await supabase.from('accounts').select('default_due_days').eq('id', customerId).single();
+        let dueDate = null;
+        if (cData && cData.default_due_days) {
+          const dd = new Date();
+          dd.setDate(dd.getDate() + cData.default_due_days);
+          dueDate = dd.toISOString().split('T')[0];
+        }
+
         const { error: txError } = await supabase.from('transactions').insert([{
           account_id: customerId,
-          transaction_type: 'Borç', // Müşteri bize borçlanıyor
+          transaction_type: 'Borç',
           amount: totalAmount,
-          payment_method: 'Nakit', // Veritabanı kısıtlamasına uyması için Nakit/Cari
+          payment_method: 'Nakit', 
           transaction_date: new Date().toISOString(),
+          due_date: dueDate,
           description: `Sipariş: ${saleData.id.slice(0,8)} (Veresiye Satış)`
         }]);
         if (txError) throw txError;

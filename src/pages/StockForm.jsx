@@ -1,9 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Save, X, ArrowLeft, RefreshCw, Camera, ListPlus, Trash2 } from 'lucide-react';
 import CreatableSelect from 'react-select/creatable';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
+
+
+  const DropdownList = ({ items, onSelect }) => (
+    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', zIndex: 50, marginTop: '4px', boxShadow: 'var(--shadow-lg)', maxHeight: '200px', overflowY: 'auto' }}>
+      {items.length === 0 ? (
+        <div style={{ padding: '0.75rem 1rem', color: 'var(--color-text-muted)' }}>Bulunamadı. Enter'a basarak yeni kaydedebilirsiniz.</div>
+      ) : (
+        items.map(item => (
+          <div 
+            key={item.id} 
+            style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}
+            className="hover:bg-[rgba(255,255,255,0.05)]"
+            onClick={() => onSelect(item)}
+            onMouseDown={(e) => e.preventDefault()} // to prevent onBlur from firing first
+          >
+            <div className="font-bold text-primary">{item.part_name}</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', display: 'flex', gap: '1rem' }}>
+               <span>Kod: {item.part_code}</span>
+               {item.barcode && <span>Barkod: {item.barcode}</span>}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
 
 export default function StockForm() {
   const { id } = useParams();
@@ -45,6 +71,15 @@ export default function StockForm() {
 
   const [loading, setLoading] = useState(false);
   const [fetchingProduct, setFetchingProduct] = useState(false);
+  const [activeDropdown, setActiveDropdown] = useState(null);
+  
+  const { data: allStocks } = useQuery({
+    queryKey: ['stocks_dropdown'],
+    queryFn: async () => {
+      const { data } = await supabase.from('stocks').select('*');
+      return data || [];
+    }
+  });
   const [error, setError] = useState('');
   const [draftItems, setDraftItems] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -69,8 +104,14 @@ export default function StockForm() {
     barcode: '',
     part_type: 'Orijinal',
     buying_price: 0,
+    discount: '',
     margin: '',
     kdv_rate: 20,
+      discount: '',
+    id: null,
+    margin: '',
+    kdv_rate: 20,
+      discount: '',
     id: null
   });
 
@@ -155,64 +196,34 @@ export default function StockForm() {
     }
   };
 
+  const handleSelectExisting = (fullData) => {
+    setFormData(prev => ({
+      ...prev,
+      id: fullData.id,
+      part_code: fullData.part_code || '',
+      part_name: fullData.part_name || '',
+      description: fullData.description || '',
+      price: fullData.price || 0,
+      buying_price: fullData.buying_price || 0,
+      category: fullData.category || '',
+      original_part_number: fullData.original_part_number || '',
+      brand: fullData.brand || '',
+      vehicle_brand: fullData.vehicle_brand || '',
+      shelf_location: fullData.shelf_location || '',
+      supplier: fullData.supplier || '',
+      min_stock_warning: fullData.min_stock_warning || 5,
+      barcode: fullData.barcode || '',
+      quantity: '', 
+      margin: '',
+      kdv_rate: 20,
+      discount: ''
+    }));
+    setActiveDropdown(null);
+  };
+  
   const handleCheckDuplicate = async (field, value) => {
-    if (isEditing || !value) return;
-
-    setFetchingProduct(true);
-    try {
-      const { data: results, error } = await supabase
-        .from('stocks')
-        .select('id, part_name')
-        .eq(field, value)
-        .limit(1);
-
-      if (error) {
-        alert("Sorgu hatası: " + error.message);
-        setFetchingProduct(false);
-        return;
-      }
-
-      const data = results?.[0];
-
-      if (data) {
-        // Otomatik olarak ürünü getir
-        const { data: fullData, error: fullError } = await supabase.from('stocks').select('*').eq('id', data.id).single();
-        if (fullError) {
-            alert("Detaylar alınamadı: " + fullError.message);
-            setFetchingProduct(false);
-            return;
-        }
-        if (fullData) {
-          setFormData(prev => ({
-            ...prev,
-            id: fullData.id,
-            part_code: fullData.part_code || '',
-            part_name: fullData.part_name || '',
-            description: fullData.description || '',
-            price: fullData.price || 0,
-            buying_price: fullData.buying_price || 0,
-            category: fullData.category || '',
-            original_part_number: fullData.original_part_number || '',
-            brand: fullData.brand || '',
-            vehicle_brand: fullData.vehicle_brand || '',
-            shelf_location: fullData.shelf_location || '',
-            supplier: fullData.supplier || '',
-            min_stock_warning: fullData.min_stock_warning || 5,
-            barcode: fullData.barcode || '',
-            quantity: '', // Miktarı boş bırakıyoruz ki faturadaki adeti girsin
-            margin: '',
-            kdv_rate: 20
-          }));
-          // alert(`Sistemde var olan ürün (${fullData.part_name}) faturaya eklenebilmesi için getirildi. Lütfen miktar girip listeye ekleyin.`);
-        }
-      } else {
-         // Eğer Enter'a basıldıysa ve bulunamadıysa uyarı verelim
-         // alert(`${value} kodlu ürün bulunamadı. Yeni kayıt olarak devam edebilirsiniz.`);
-      }
-    } catch (err) {
-      alert("Beklenmeyen hata: " + err.message);
-    }
-    setFetchingProduct(false);
+     // Kept for compatibility if they press Enter
+     setActiveDropdown(null);
   };
 
   const handleKeyDownCheck = (e, field, value) => {
@@ -276,9 +287,11 @@ export default function StockForm() {
       quantity: 0,
       price: 0,
       buying_price: 0,
+    discount: '',
       id: null,
       margin: '',
-      kdv_rate: 20
+      kdv_rate: 20,
+      discount: ''
     }));
   };
 
@@ -402,26 +415,50 @@ export default function StockForm() {
           <div>
             <h3 className="mb-4 text-primary" style={{ fontSize: '1.2rem' }}>Temel Bilgiler</h3>
             
-            <div className="form-group">
+            <div className="form-group" style={{ position: 'relative' }}>
               <label className="form-label flex justify-between items-center">
                 <span>Parça Kodu *</span>
-                {fetchingProduct && <span style={{ fontSize: '0.8rem', color: 'var(--color-primary)' }}>Aranıyor...</span>}
               </label>
               <input 
                 type="text" 
                 name="part_code" 
                 value={formData.part_code} 
-                onChange={handleChange} 
-                onBlur={(e) => handleCheckDuplicate('part_code', e.target.value)}
-                onKeyDown={(e) => handleKeyDownCheck(e, 'part_code', e.target.value)}
+                onChange={(e) => { handleChange(e); setActiveDropdown('part_code'); }} 
+                onFocus={() => setActiveDropdown('part_code')}
+                onBlur={() => setTimeout(() => setActiveDropdown(null), 200)}
                 className="form-input" 
                 required 
+                autoComplete="off"
               />
+              {activeDropdown === 'part_code' && formData.part_code && allStocks && (
+                <DropdownList 
+                  items={allStocks.filter(s => s.part_code?.toLowerCase().includes(formData.part_code.toLowerCase())).slice(0, 5)} 
+                  onSelect={handleSelectExisting} 
+                />
+              )}
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Parça Adı *</label>
-              <input type="text" name="part_name" value={formData.part_name} onChange={handleChange} className="form-input" required={draftItems.length === 0} />
+            <div className="form-group" style={{ position: 'relative' }}>
+              <label className="form-label flex justify-between items-center">
+                <span>Parça Adı *</span>
+              </label>
+              <input 
+                type="text" 
+                name="part_name" 
+                value={formData.part_name} 
+                onChange={(e) => { handleChange(e); setActiveDropdown('part_name'); }} 
+                onFocus={() => setActiveDropdown('part_name')}
+                onBlur={() => setTimeout(() => setActiveDropdown(null), 200)}
+                className="form-input" 
+                required={draftItems.length === 0}
+                autoComplete="off"
+              />
+              {activeDropdown === 'part_name' && formData.part_name && allStocks && (
+                <DropdownList 
+                  items={allStocks.filter(s => s.part_name?.toLowerCase().includes(formData.part_name.toLowerCase())).slice(0, 5)} 
+                  onSelect={handleSelectExisting} 
+                />
+              )}
             </div>
 
             <div className="form-group">
@@ -517,10 +554,14 @@ export default function StockForm() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '1rem' }}>
               <div className="form-group">
                 <label className="form-label">Alış Fiyatı (₺)</label>
                 <input type="number" name="buying_price" value={formData.buying_price} onChange={handleChange} className="form-input" min="0" step="0.01" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">İskonto (%)</label>
+                <input type="number" name="discount" value={formData.discount} onChange={handleChange} className="form-input" min="0" step="0.01" />
               </div>
               <div className="form-group">
                 <label className="form-label">KDV Oranı (%)</label>
@@ -582,93 +623,150 @@ export default function StockForm() {
               <label className="form-label">Üretici / Marka (Açıklama Amaçlı)</label>
               <input type="text" name="supplier" value={formData.supplier} onChange={handleChange} className="form-input" placeholder="Örn: Bosch, Valeo..." />
             </div>
-
+          </div>
+        </div>
+        {!isEditing && draftItems.length > 0 && (
+          <div className="glass-panel mt-6 animate-fade-in" style={{ padding: '1.5rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--color-border)' }}>
+            <h3 className="mb-4 text-primary" style={{ fontSize: '1.4rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
+              Fatura Özeti ({draftItems.length} Kalem)
+            </h3>
             
-            {!isEditing && draftItems.length > 0 && (
-              <div className="glass-panel mt-4 animate-fade-in" style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                <h4 style={{ margin: '0 0 1rem 0', color: 'var(--color-primary)', fontSize: '1.1rem' }}>Eklenecek Ürünler Listesi ({draftItems.length} Ürün)</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {draftItems.map((item, idx) => (
-                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius-sm)' }}>
-                      <div>
-                        <div className="font-bold">{item.part_name} <span style={{fontSize: '0.8rem', color: 'var(--color-text-muted)'}}>({item.part_code})</span></div>
-                        <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Miktar: {item.quantity} | Alış: ₺{item.buying_price} + %{item.kdv_rate || 0} KDV</div>
-                      </div>
-                      <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem', color: 'var(--color-danger)' }} onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
+            <div style={{ overflowX: 'auto', marginBottom: '2rem' }}>
+              <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
+                    <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>Ürün Adı / Kodu</th>
+                    <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>Miktar</th>
+                    <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>Birim Alış</th>
+                    <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>İskonto</th>
+                    <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>KDV</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'normal' }}>Toplam</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'center', width: '50px' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {draftItems.map((item, idx) => {
+                    const rawSub = (item.quantity || 0) * (item.buying_price || 0);
+                    const sub = rawSub - (rawSub * ((item.discount || 0) / 100));
+                    const kdv = sub * ((item.kdv_rate || 0) / 100);
+                    const total = sub + kdv;
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '1rem 0.75rem' }}>
+                          <div className="font-bold">{item.part_name}</div>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{item.part_code}</div>
+                        </td>
+                        <td style={{ padding: '1rem 0.75rem' }}>{item.quantity} Adet</td>
+                        <td style={{ padding: '1rem 0.75rem' }}>₺{Number(item.buying_price).toFixed(2)}</td>
+                        <td style={{ padding: '1rem 0.75rem' }}>%{item.discount || 0}</td>
+                        <td style={{ padding: '1rem 0.75rem' }}>%{item.kdv_rate || 0}</td>
+                        <td style={{ padding: '1rem 0.75rem', textAlign: 'right', fontWeight: 'bold' }}>₺{total.toFixed(2)}</td>
+                        <td style={{ padding: '1rem 0.75rem', textAlign: 'center' }}>
+                          <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem', color: 'var(--color-danger)' }} onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}>
+                            <Trash2 size={18} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+              <div>
+                <h4 style={{ margin: '0 0 1rem 0', color: 'var(--color-text)', fontSize: '1.1rem' }}>Muhasebe / Cari İşlemi</h4>
+                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                  <input 
+                    type="checkbox" 
+                    id="log_tx" 
+                    name="log_transaction" 
+                    checked={transaction.log_transaction} 
+                    onChange={(e) => {
+                      handleTransactionChange(e);
+                      if (e.target.checked) {
+                        const rawCurrent = ((formData.quantity || 0) * (formData.buying_price || 0));
+                        const discountedCurrent = rawCurrent - (rawCurrent * ((formData.discount || 0) / 100));
+                        const currentAmount = discountedCurrent * (1 + ((formData.kdv_rate || 0) / 100));
+                        const draftAmount = draftItems.reduce((sum, item) => {
+                      const raw = (item.quantity || 0) * (item.buying_price || 0);
+                      const discounted = raw - (raw * ((item.discount || 0) / 100));
+                      return sum + (discounted * (1 + ((item.kdv_rate || 0) / 100)));
+                    }, 0);
+                        setTransaction(prev => ({ ...prev, amount: currentAmount + draftAmount }));
+                      }
+                    }} 
+                    style={{ width: '18px', height: '18px' }} 
+                  />
+                  <label htmlFor="log_tx" style={{ margin: 0, cursor: 'pointer', fontWeight: 'bold' }}>Bu faturayı muhasebeye (Cari / Çek) işle</label>
                 </div>
-              </div>
-            )}
-            
-            <div className="glass-panel mt-4" style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--color-border)' }}>
-              <h4 style={{ margin: '0 0 1rem 0', color: 'var(--color-primary)', fontSize: '1.1rem' }}>Muhasebe / Cari İşlemi</h4>
-              
-              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                <input 
-                  type="checkbox" 
-                  id="log_tx" 
-                  name="log_transaction" 
-                  checked={transaction.log_transaction} 
-                  onChange={(e) => {
-                    handleTransactionChange(e);
-                    if (e.target.checked) {
-                      // Otomatik tutar hesapla
-                      const currentAmount = ((formData.quantity || 0) * (formData.buying_price || 0)) * (1 + ((formData.kdv_rate || 0) / 100));
-                      const draftAmount = draftItems.reduce((sum, item) => sum + (((item.quantity || 0) * (item.buying_price || 0)) * (1 + ((item.kdv_rate || 0) / 100))), 0);
-                      setTransaction(prev => ({ ...prev, amount: currentAmount + draftAmount }));
-                    }
-                  }} 
-                  style={{ width: '18px', height: '18px' }} 
-                />
-                <label htmlFor="log_tx" style={{ margin: 0, cursor: 'pointer', fontWeight: 'bold' }}>Bu girişi muhasebeye (Cari / Çek) işle</label>
-              </div>
 
-              {transaction.log_transaction && (
-                <div className="animate-fade-in" style={{ display: 'grid', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Tedarikçi Seçin *</label>
-                    <select name="supplier_id" value={transaction.supplier_id} onChange={handleTransactionChange} className="form-input" required={transaction.log_transaction}>
-                      <option value="">-- Listeden Seçin --</option>
-                      {suppliers.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                {transaction.log_transaction && (
+                  <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     <div className="form-group">
-                      <label className="form-label">İşlenecek Toplam Tutar (₺) *</label>
-                      <input type="number" name="amount" value={transaction.amount} onChange={handleTransactionChange} className="form-input" min="0" step="0.01" required={transaction.log_transaction} />
-                    </div>
-                    
-                    <div className="form-group">
-                      <label className="form-label">Ödeme Tipi *</label>
-                      <select name="payment_method" value={transaction.payment_method} onChange={handleTransactionChange} className="form-input">
-                        <option value="Veresiye">Veresiye (Cariye Borç İşle)</option>
-                        <option value="Çek / Senet">Çek / Senet Ver</option>
-                        <option value="Nakit">Nakit Ödendi (Kayıt Atılmaz)</option>
-                        <option value="Kredi Kartı">Kredi Kartı Ödendi (Kayıt Atılmaz)</option>
+                      <label className="form-label">Tedarikçi Seçin *</label>
+                      <select name="supplier_id" value={transaction.supplier_id} onChange={handleTransactionChange} className="form-input" required={transaction.log_transaction}>
+                        <option value="">-- Listeden Seçin --</option>
+                        {suppliers.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
                       </select>
                     </div>
-                  </div>
 
-                  {transaction.payment_method === 'Çek / Senet' && (
-                    <div className="form-group animate-fade-in">
-                      <label className="form-label">Vade Tarihi *</label>
-                      <input type="date" name="check_due_date" value={transaction.check_due_date} onChange={handleTransactionChange} className="form-input" required={transaction.payment_method === 'Çek / Senet'} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                      <div className="form-group">
+                        <label className="form-label">İşlenecek Toplam (₺) *</label>
+                        <input type="number" name="amount" value={transaction.amount} onChange={handleTransactionChange} className="form-input" min="0" step="0.01" required={transaction.log_transaction} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Ödeme Tipi *</label>
+                        <select name="payment_method" value={transaction.payment_method} onChange={handleTransactionChange} className="form-input">
+                          <option value="Veresiye">Veresiye</option>
+                          <option value="Çek / Senet">Çek / Senet</option>
+                          <option value="Nakit">Nakit</option>
+                          <option value="Kredi Kartı">Kredi Kartı</option>
+                        </select>
+                      </div>
                     </div>
-                  )}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', color: 'var(--color-text-muted)' }}>
+                    <span>Ara Toplam (İndirimsiz):</span>
+                    <span>₺{draftItems.reduce((sum, item) => sum + ((item.quantity || 0) * (item.buying_price || 0)), 0).toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', color: 'var(--color-danger)' }}>
+                    <span>İskonto Toplamı:</span>
+                    <span>- ₺{draftItems.reduce((sum, item) => {
+                      const raw = (item.quantity || 0) * (item.buying_price || 0);
+                      return sum + (raw * ((item.discount || 0) / 100));
+                    }, 0).toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', color: 'var(--color-text-muted)' }}>
+                    <span>KDV Toplam:</span>
+                    <span>₺{draftItems.reduce((sum, item) => {
+                      const raw = (item.quantity || 0) * (item.buying_price || 0);
+                      const discounted = raw - (raw * ((item.discount || 0) / 100));
+                      return sum + (discounted * ((item.kdv_rate || 0) / 100));
+                    }, 0).toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--color-primary)', borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
+                    <span>Genel Toplam:</span>
+                    <span>₺{draftItems.reduce((sum, item) => {
+                      const raw = (item.quantity || 0) * (item.buying_price || 0);
+                      const discounted = raw - (raw * ((item.discount || 0) / 100));
+                      return sum + (discounted * (1 + ((item.kdv_rate || 0) / 100)));
+                    }, 0).toFixed(2)}</span>
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
           </div>
-          
-        </div>
+        )}
 
-        
         <div className="flex justify-end gap-4 mt-6" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1.5rem' }}>
           {!isEditing && (
             <button type="button" className="btn btn-secondary" onClick={handleAddToList} style={{ marginRight: 'auto', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'var(--color-danger)' }}>

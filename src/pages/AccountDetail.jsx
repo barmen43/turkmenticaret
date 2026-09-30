@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { ArrowLeft, BookOpen, Plus, Trash2, Search } from 'lucide-react';
+import { ArrowLeft, BookOpen, Plus, Trash2, Search, Printer } from 'lucide-react';
 import dayjs from 'dayjs';
 import SaleDetailModal from '../components/SaleDetailModal';
+import { printCollectionReceipt } from '../lib/printReceipt';
 
 export default function AccountDetail() {
   const { id } = useParams();
@@ -363,6 +364,14 @@ export default function AccountDetail() {
                           <Search size={14} className="text-primary" />
                         </button>
                       )}
+                      <button 
+                        className="btn btn-secondary" 
+                        style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} 
+                        onClick={() => printCollectionReceipt(tx, account, balance)} 
+                        title="Makbuz Yazdır"
+                      >
+                        <Printer size={14} className="text-primary" />
+                      </button>
                       <button className="btn btn-danger" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} onClick={() => handleDeleteTransaction(tx.id)} title="Sil">
                         <Trash2 size={14} />
                       </button>
