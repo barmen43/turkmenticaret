@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Save, X, ArrowLeft, RefreshCw, Camera, ListPlus, Trash2 } from 'lucide-react';
 import CreatableSelect from 'react-select/creatable';
@@ -34,6 +34,7 @@ import BarcodeScannerModal from '../components/BarcodeScannerModal';
 export default function StockForm() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const isEditing = Boolean(id);
 
   const selectStyles = {
@@ -76,7 +77,7 @@ export default function StockForm() {
   const { data: allStocks } = useQuery({
     queryKey: ['stocks_dropdown'],
     queryFn: async () => {
-      const { data } = await supabase.from('stocks').select('*');
+      const { data } = await supabase.from('stocks').select('*').eq('is_active', true);
       return data || [];
     }
   });
@@ -191,7 +192,11 @@ export default function StockForm() {
         min_stock_warning: data.min_stock_warning || 5,
         barcode: data.barcode || '',
         part_type: data.part_type || 'Orijinal',
-        buying_price: data.buying_price || 0
+        buying_price: data.buying_price || 0,
+        discount: '',
+        margin: '',
+        kdv_rate: 20,
+        id: data.id
       });
     }
   };
@@ -310,9 +315,10 @@ export default function StockForm() {
       if (payload.min_stock_warning === '') payload.min_stock_warning = 0;
 
       if (isEditing) {
+        const { id: _id, margin: _m, kdv_rate: _k, discount: _d, buying_price: _b, ...cleanPayload } = payload;
         const { error: updateError } = await supabase
           .from('stocks')
-          .update({ ...payload, updated_at: new Date().toISOString() })
+          .update({ ...cleanPayload, updated_at: new Date().toISOString() })
           .eq('id', id);
         if (updateError) throw updateError;
       } else {
@@ -326,20 +332,56 @@ export default function StockForm() {
         }
 
         for (let item of itemsToSave) {
-          if (item.id) {
+          let targetId = item.id;
+          
+          if (!targetId && (item.part_code || item.barcode)) {
+             let query = supabase.from('stocks').select('id, part_name');
+             if (item.barcode && item.part_code) {
+                 query = query.or(`barcode.eq.${item.barcode},part_code.ilike.${item.part_code}`);
+             } else if (item.barcode) {
+                 query = query.eq('barcode', item.barcode);
+             } else {
+                 query = query.ilike('part_code', item.part_code);
+             }
+             
+             const { data: existingCheck } = await query.limit(1);
+             if (existingCheck && existingCheck.length > 0) {
+               targetId = existingCheck[0].id;
+               
+               // Eğer parça kodu eşleştiyse ama kullanıcı farklı bir isim yazdıysa uyar ve işlemi durdur
+               if (item.part_name && existingCheck[0].part_name) {
+                 const typedName = item.part_name.trim().toLowerCase();
+                 const existingName = existingCheck[0].part_name.trim().toLowerCase();
+                 if (typedName !== existingName && !existingName.includes(typedName) && !typedName.includes(existingName)) {
+                   throw new Error(`Girdiğiniz '${item.part_code}' kodu zaten sistemde '${existingCheck[0].part_name}' olarak kayıtlı! Farklı bir ürüne aynı kodu veremezsiniz. Mevcut ürüne ekleme yapmak istiyorsanız listeden seçiniz.`);
+                 }
+               }
+             }
+          }
+
+          if (targetId) {
              // Var olan ürünü güncelle (stoğu artır)
-             const { data: currentStock } = await supabase.from('stocks').select('quantity').eq('id', item.id).single();
+             const { data: currentStock } = await supabase.from('stocks').select('quantity').eq('id', targetId).single();
              const newQuantity = (currentStock?.quantity || 0) + Number(item.quantity);
              
-             const { id: itemId, margin, kdv_rate, ...updateData } = item;
-             updateData.quantity = newQuantity;
-             updateData.updated_at = new Date().toISOString();
+             const updatePayload = {
+               quantity: newQuantity,
+               updated_at: new Date().toISOString()
+             };
              
-             const { error: updErr } = await supabase.from('stocks').update(updateData).eq('id', item.id);
+             // Sadece formda doldurulmuş alanları güncelle (mevcut veriyi boş string ile ezmemek için)
+             const { id: _id, margin: _m, kdv_rate: _k, discount: _d, buying_price: _b, quantity: _q, ...otherFields } = item;
+             for (const [key, val] of Object.entries(otherFields)) {
+                 if (val !== '' && val !== null && val !== undefined) {
+                     updatePayload[key] = val;
+                 }
+             }
+             
+             const { error: updErr } = await supabase.from('stocks').update(updatePayload).eq('id', targetId);
              if (updErr) throw updErr;
           } else {
              // Yeni ürün ekle
-             const { id: itemId, margin, kdv_rate, ...insertData } = item;
+             const { id: itemId, margin, kdv_rate, discount, buying_price, ...insertData } = item;
              const { data: insData, error: insErr } = await supabase.from('stocks').insert([insertData]).select('id').single();
              if (insErr) throw insErr;
              if (!stockId && insData) stockId = insData.id;
@@ -380,6 +422,10 @@ export default function StockForm() {
         }
         // Nakit veya K.Kartı seçildiyse doğrudan ödenmiş kabul edilir, ekstra borç kaydı atılmaz.
       }
+      
+      // Önbelleği tamamen temizle (Eski 175 vb. rakamların görünmesini engellemek için)
+      queryClient.removeQueries({ queryKey: ['stocks'] });
+      queryClient.removeQueries({ queryKey: ['stocks_dropdown'] });
       
       navigate('/portal/stoklar');
     } catch (err) {
@@ -427,7 +473,7 @@ export default function StockForm() {
                 onFocus={() => setActiveDropdown('part_code')}
                 onBlur={() => setTimeout(() => setActiveDropdown(null), 200)}
                 className="form-input" 
-                required 
+                required={draftItems.length === 0} 
                 autoComplete="off"
               />
               {activeDropdown === 'part_code' && formData.part_code && allStocks && (
@@ -704,8 +750,8 @@ export default function StockForm() {
                 {transaction.log_transaction && (
                   <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     <div className="form-group">
-                      <label className="form-label">Tedarikçi Seçin *</label>
-                      <select name="supplier_id" value={transaction.supplier_id} onChange={handleTransactionChange} className="form-input" required={transaction.log_transaction}>
+                      <label className="form-label">Tedarikçi Seçin</label>
+                      <select name="supplier_id" value={transaction.supplier_id} onChange={handleTransactionChange} className="form-input">
                         <option value="">-- Listeden Seçin --</option>
                         {suppliers.map(s => (
                           <option key={s.id} value={s.id}>{s.name}</option>

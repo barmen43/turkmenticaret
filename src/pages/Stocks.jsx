@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Search, Edit, Trash2, Plus, AlertCircle, Box, RefreshCw, X, HelpCircle, Printer, Camera } from 'lucide-react';
 import BarcodeModal from '../components/BarcodeModal';
@@ -97,6 +97,9 @@ export default function Stocks() {
   // Scanner Modal State
   const [scannerOpen, setScannerOpen] = useState(false);
 
+  const queryClient = useQueryClient();
+  const [deleteModal, setDeleteModal] = useState({ open: false, stock: null, mode: 'confirm' });
+
   // Sync search input with URL if URL changes
   useEffect(() => {
     setSearchTerm(searchParams.get('q') || '');
@@ -107,7 +110,7 @@ export default function Stocks() {
     queryKey: ['stocks', searchParams.get('q')],
     queryFn: async () => {
       const q = searchParams.get('q');
-      let query = supabase.from('stocks').select('*').order('created_at', { ascending: false });
+      let query = supabase.from('stocks').select('*').eq('is_active', true).order('created_at', { ascending: false });
 
       if (q) {
         // Arama terimini boşluklara göre bölüp her bir kelime için ayrı bir .or() filtresi ekliyoruz.
@@ -133,7 +136,7 @@ export default function Stocks() {
     queryFn: async () => {
       const q = searchParams.get('q');
       // Öneri yapmak için sadece temel bilgileri çekiyoruz (performans için)
-      const { data, error } = await supabase.from('stocks').select('id, part_code, part_name, brand').limit(3000);
+      const { data, error } = await supabase.from('stocks').select('id, part_code, part_name, brand').eq('is_active', true).limit(3000);
       if (error) throw error;
       
       return getSuggestions(q, data);
@@ -154,13 +157,28 @@ export default function Stocks() {
     setSearchParams({ q: scannedCode });
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Bu stoğu silmek istediğinize emin misiniz?')) {
-      const { error } = await supabase.from('stocks').delete().eq('id', id);
-      if (!error) {
-        // Refetch or invalidate query ideally, but for now we'll just reload or rely on real-time
-        window.location.reload();
-      }
+  const handleDelete = (stock) => {
+    setDeleteModal({ open: true, stock, mode: 'confirm' });
+  };
+
+  const confirmDelete = async () => {
+    const { error } = await supabase.from('stocks').delete().eq('id', deleteModal.stock.id);
+    if (!error) {
+      queryClient.removeQueries({ queryKey: ['stocks'] });
+      setDeleteModal({ open: false, stock: null, mode: 'confirm' });
+    } else {
+      setDeleteModal({ ...deleteModal, mode: 'archive' });
+    }
+  };
+
+  const confirmArchive = async () => {
+    const { error: archiveError } = await supabase.from('stocks').update({ is_active: false }).eq('id', deleteModal.stock.id);
+    if (!archiveError) {
+      queryClient.removeQueries({ queryKey: ['stocks'] });
+      setDeleteModal({ open: false, stock: null, mode: 'confirm' });
+    } else {
+      alert("Arşivleme işlemi sırasında bir hata oluştu.");
+      setDeleteModal({ open: false, stock: null, mode: 'confirm' });
     }
   };
 
@@ -309,7 +327,7 @@ export default function Stocks() {
                       <button 
                         className="btn btn-danger" 
                         style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}
-                        onClick={() => handleDelete(stock.id)}
+                        onClick={() => handleDelete(stock)}
                         title="Sil"
                       >
                         <Trash2 size={16} />
@@ -465,6 +483,56 @@ export default function Stocks() {
           onScan={handleScan}
         />
       )}
+      {/* Custom Delete / Archive Modal */}
+      {deleteModal.open && deleteModal.stock && (
+        <div className="modal-overlay" style={{ zIndex: 9999, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '500px', padding: '2.5rem', borderRadius: 'var(--radius-lg)', background: 'var(--color-surface)', border: `1px solid ${deleteModal.mode === 'archive' ? 'rgba(234,179,8,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
+            <h3 className="mb-4 flex items-center gap-3" style={{ fontSize: '1.5rem', fontWeight: 'bold', color: deleteModal.mode === 'archive' ? '#eab308' : 'var(--color-danger)' }}>
+              <AlertCircle size={28} />
+              {deleteModal.mode === 'archive' ? 'Ürün Silinemedi!' : 'Ürünü Sil'}
+            </h3>
+            
+            {deleteModal.mode === 'confirm' ? (
+              <p className="mb-8" style={{ color: 'var(--color-text-muted)', fontSize: '1.1rem', lineHeight: '1.6' }}>
+                <strong style={{ color: 'var(--color-text)' }}>{deleteModal.stock.part_name} ({deleteModal.stock.part_code})</strong> adlı ürünü kalıcı olarak silmek istediğinize emin misiniz? <br/><br/>Bu işlem geri alınamaz.
+              </p>
+            ) : (
+              <p className="mb-8" style={{ color: 'var(--color-text-muted)', fontSize: '1.1rem', lineHeight: '1.6' }}>
+                Bu ürün geçmişte bir işlemde (fatura, satış vb.) kullanıldığı için veri bütünlüğü kuralları gereği <strong>tamamen silinemez</strong>. <br/><br/>
+                Bunun yerine ürünü <strong style={{ color: '#eab308' }}>ARŞİVLEMEK</strong> (listedeki ve formlardaki görünürlüğünü kaldırmak) ister misiniz?
+              </p>
+            )}
+            
+            <div className="flex gap-4 justify-end mt-4">
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setDeleteModal({ open: false, stock: null, mode: 'confirm' })}
+                style={{ padding: '0.8rem 1.5rem', fontSize: '1rem' }}
+              >
+                İptal
+              </button>
+              {deleteModal.mode === 'confirm' ? (
+                <button 
+                  className="btn" 
+                  onClick={confirmDelete} 
+                  style={{ background: 'var(--color-danger)', color: 'white', padding: '0.8rem 1.5rem', fontSize: '1rem', border: 'none' }}
+                >
+                  Evet, Sil
+                </button>
+              ) : (
+                <button 
+                  className="btn" 
+                  onClick={confirmArchive} 
+                  style={{ background: '#eab308', color: '#000', padding: '0.8rem 1.5rem', fontSize: '1rem', border: 'none', fontWeight: 'bold' }}
+                >
+                  Evet, Arşivle
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
