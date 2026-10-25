@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { ArrowLeft, BookOpen, Plus, Trash2, Search, Printer } from 'lucide-react';
 import dayjs from 'dayjs';
@@ -10,6 +10,7 @@ import { printCollectionReceipt } from '../lib/printReceipt';
 export default function AccountDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [transactionType, setTransactionType] = useState('Borç');
   const [amount, setAmount] = useState('');
@@ -69,20 +70,28 @@ export default function AccountDetail() {
     return acc;
   }, 0) : 0;
 
+  const isSupplier = account?.account_type === 'Tedarikçi';
+
   const handleAddTransaction = async (e) => {
     e.preventDefault();
     if (!amount || Number(amount) <= 0) return alert('Lütfen geçerli bir tutar girin.');
 
     setLoadingTx(true);
     try {
+      const finalTransactionType = isSupplier ? 'Borç' : transactionType;
+      const defaultDesc = isSupplier 
+        ? `Toptancıya Ödeme (${paymentMethod})` 
+        : (transactionType === 'Borç' ? 'Satış / Borçlandırma' : 'Tahsilat / Ödeme');
+
       // 1. Transaction Ekle
       const { error: txError } = await supabase.from('transactions').insert([{
         account_id: id,
-        transaction_type: transactionType,
+        transaction_type: finalTransactionType,
         amount: Number(amount),
         payment_method: paymentMethod.includes('Çek') ? 'Çek' : paymentMethod,
+        transaction_date: new Date().toISOString(),
         due_date: dueDate || null,
-        description: description || (transactionType === 'Borç' ? 'Satış / Borçlandırma' : 'Tahsilat / Ödeme')
+        description: description || defaultDesc
       }]);
 
       if (txError) throw txError;
@@ -110,7 +119,7 @@ export default function AccountDetail() {
           owner_name: 'Kendi Firmamız',
           amount: Number(amount),
           due_date: dueDate,
-          type: checkType === 'Müşteri Çeki' ? 'Kendi Çekimiz' : 'Kendi Senedimiz',
+          type: checkType === 'Müşteri Çeki' ? 'Kendi Çekimiz' : (checkType || 'Kendi Çekimiz'),
           status: 'Cirolandı', // Kendi çekimizi verdiğimizde direkt çıkış yapılmış olur
           given_to: id
         }]);
@@ -128,8 +137,14 @@ export default function AccountDetail() {
       setOwnerName('');
       setDueDate('');
       setSelectedCheckId('');
+      
+      // Cache invalidation so accounts list & detail update immediately everywhere
+      await queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      await queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      await queryClient.invalidateQueries({ queryKey: ['account', id] });
       refetchTxs();
-      alert('İşlem başarıyla kaydedildi.');
+
+      alert(isSupplier ? 'Toptancıya ödeme başarıyla kaydedildi.' : 'İşlem başarıyla kaydedildi.');
     } catch (err) {
       console.error(err);
       alert('İşlem kaydedilirken hata oluştu.');
@@ -141,7 +156,12 @@ export default function AccountDetail() {
   const handleDeleteTransaction = async (txId) => {
     if (window.confirm('Bu işlemi silmek istediğinize emin misiniz? Bakiye yeniden hesaplanacaktır.')) {
       const { error } = await supabase.from('transactions').delete().eq('id', txId);
-      if (!error) refetchTxs();
+      if (!error) {
+        await queryClient.invalidateQueries({ queryKey: ['transactions'] });
+        await queryClient.invalidateQueries({ queryKey: ['accounts'] });
+        await queryClient.invalidateQueries({ queryKey: ['account', id] });
+        refetchTxs();
+      }
     }
   };
 
@@ -166,10 +186,17 @@ export default function AccountDetail() {
           <h3 className="text-primary mb-4" style={{ fontSize: '1.2rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>Hesap Özeti</h3>
           
           <div className="mb-6">
-            <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>Güncel Bakiye</div>
-            <div style={{ fontSize: '2rem', fontWeight: 'bold' }} className={balance < 0 ? 'text-danger' : balance > 0 ? 'text-success' : ''}>
-              {balance < 0 ? 'Borçlu: ' : balance > 0 ? 'Alacaklı: ' : ''}
-              ₺{Math.abs(balance).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+              {isSupplier ? 'Kalan Toptancı Borcu' : 'Güncel Bakiye'}
+            </div>
+            <div style={{ fontSize: '2rem', fontWeight: 'bold' }} className={isSupplier ? (balance > 0 ? 'text-danger' : balance < 0 ? 'text-success' : '') : (balance < 0 ? 'text-danger' : balance > 0 ? 'text-success' : '')}>
+              {isSupplier ? (
+                balance > 0 ? `Borcumuz: ₺${balance.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` :
+                balance < 0 ? `Alacağımız: ₺${Math.abs(balance).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` :
+                '₺0,00 (Borç Yok)'
+              ) : (
+                `${balance < 0 ? 'Borçlu: ' : balance > 0 ? 'Alacaklı: ' : ''}₺${Math.abs(balance).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              )}
             </div>
           </div>
 
@@ -183,51 +210,72 @@ export default function AccountDetail() {
           </div>
         </div>
 
-        {/* Sağ Taraf: Yeni İşlem Ekleme */}
+        {/* Sağ Taraf: Yeni İşlem Ekleme / Toptancıya Ödeme */}
         <div className="glass-panel" style={{ padding: '2rem' }}>
-          <h3 className="text-primary mb-4" style={{ fontSize: '1.2rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>Yeni İşlem (Para Giriş/Çıkışı)</h3>
+          <h3 className="text-primary mb-4" style={{ fontSize: '1.2rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
+            {isSupplier ? 'Toptancıya Ödeme Yap' : 'Yeni İşlem (Para Giriş/Çıkışı)'}
+          </h3>
           
-          <form onSubmit={handleAddTransaction}>
-            <div className="form-group">
-              <label className="form-label">İşlem Yönü</label>
-              <div className="flex gap-2">
-                <button 
-                  type="button" 
-                  className={`btn ${transactionType === 'Alacak' ? 'btn-primary' : 'btn-secondary'}`} 
-                  style={{ flex: 1, backgroundColor: transactionType === 'Alacak' ? 'var(--color-success)' : undefined, borderColor: transactionType === 'Alacak' ? 'var(--color-success)' : undefined }}
-                  onClick={() => setTransactionType('Alacak')}
-                >
-                  Tahsilat (Bize Ödeme Yaptı)
-                </button>
-                <button 
-                  type="button" 
-                  className={`btn ${transactionType === 'Borç' ? 'btn-primary' : 'btn-secondary'}`} 
-                  style={{ flex: 1, backgroundColor: transactionType === 'Borç' ? 'var(--color-danger)' : undefined, borderColor: transactionType === 'Borç' ? 'var(--color-danger)' : undefined }}
-                  onClick={() => setTransactionType('Borç')}
-                >
-                  Satış (Bize Borçlandı)
-                </button>
-              </div>
+          {isSupplier && (
+            <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginBottom: '1.25rem', padding: '0.6rem 0.8rem', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
+              ℹ️ Toptancıya yapılan ödeme türünü ve tutarını giriniz. Kaydedilen ödeme toptancı borcundan düşülür.
             </div>
+          )}
+
+          <form onSubmit={handleAddTransaction}>
+            {!isSupplier && (
+              <div className="form-group">
+                <label className="form-label">İşlem Yönü</label>
+                <div className="flex gap-2">
+                  <button 
+                    type="button" 
+                    className={`btn ${transactionType === 'Alacak' ? 'btn-primary' : 'btn-secondary'}`} 
+                    style={{ flex: 1, backgroundColor: transactionType === 'Alacak' ? 'var(--color-success)' : undefined, borderColor: transactionType === 'Alacak' ? 'var(--color-success)' : undefined }}
+                    onClick={() => setTransactionType('Alacak')}
+                  >
+                    Tahsilat (Bize Ödeme Yaptı)
+                  </button>
+                  <button 
+                    type="button" 
+                    className={`btn ${transactionType === 'Borç' ? 'btn-primary' : 'btn-secondary'}`} 
+                    style={{ flex: 1, backgroundColor: transactionType === 'Borç' ? 'var(--color-danger)' : undefined, borderColor: transactionType === 'Borç' ? 'var(--color-danger)' : undefined }}
+                    onClick={() => setTransactionType('Borç')}
+                  >
+                    Satış (Bize Borçlandı)
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="form-group">
-              <label className="form-label">Ödeme / İşlem Türü</label>
-              <select value={paymentMethod} onChange={e => {
-                setPaymentMethod(e.target.value);
-                // Çek cirolama seçilirse amount alanını readonly yapmak için
-                if (e.target.value !== 'Çek Cirolama') setAmount('');
-              }} className="form-input">
-                <option value="Nakit">Nakit / Cari İşlem</option>
-                <option value="Havale">Havale / EFT</option>
-                <option value="Kredi Kartı">Kredi Kartı</option>
-                {account.account_type === 'Müşteri' && (
-                  <option value="Yeni Çek/Senet Alındı">Yeni Çek/Senet Alındı</option>
-                )}
-                {account.account_type === 'Tedarikçi' && (
-                  <option value="Çek Cirolama">Cüzdandan Çek/Senet Cirola (Ödeme)</option>
-                )}
-                {account.account_type === 'Tedarikçi' && (
-                  <option value="Kendi Çekimiz">Kendi Çek/Senedimizi Verdik (Ödeme)</option>
+              <label className="form-label">
+                {isSupplier ? 'Ödeme Türü / Tipi *' : 'Ödeme / İşlem Türü'}
+              </label>
+              <select 
+                value={paymentMethod} 
+                onChange={e => {
+                  const val = e.target.value;
+                  setPaymentMethod(val);
+                  if (val === 'Kendi Çekimiz') setCheckType('Kendi Çekimiz');
+                  if (val !== 'Çek Cirolama') setAmount('');
+                }} 
+                className="form-input"
+              >
+                {isSupplier ? (
+                  <>
+                    <option value="Nakit">Nakit Ödeme</option>
+                    <option value="Havale">Banka / Havale / EFT</option>
+                    <option value="Kredi Kartı">Kredi Kartı ile Ödeme</option>
+                    <option value="Çek Cirolama">Cüzdandan Çek/Senet Cirola (Ödeme)</option>
+                    <option value="Kendi Çekimiz">Kendi Çek/Senedimizi Ver (Ödeme)</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="Nakit">Nakit / Cari İşlem</option>
+                    <option value="Havale">Havale / EFT</option>
+                    <option value="Kredi Kartı">Kredi Kartı</option>
+                    <option value="Yeni Çek/Senet Alındı">Yeni Çek/Senet Alındı</option>
+                  </>
                 )}
               </select>
             </div>
@@ -296,7 +344,9 @@ export default function AccountDetail() {
             )}
 
             <div className="form-group mt-2">
-              <label className="form-label">Tutar (₺) *</label>
+              <label className="form-label">
+                {isSupplier ? 'Ödenen Tutar (₺) *' : 'Tutar (₺) *'}
+              </label>
               <input 
                 type="number" 
                 step="0.01" 
@@ -311,12 +361,18 @@ export default function AccountDetail() {
 
             <div className="form-group">
               <label className="form-label">Açıklama</label>
-              <input type="text" value={description} onChange={e => setDescription(e.target.value)} className="form-input" placeholder={transactionType === 'Borç' ? 'Fatura no, alınan mal...' : 'Nakit, Havale...'} />
+              <input 
+                type="text" 
+                value={description} 
+                onChange={e => setDescription(e.target.value)} 
+                className="form-input" 
+                placeholder={isSupplier ? 'Örn: Cari hesaba mahsuben ödeme, dekont no...' : (transactionType === 'Borç' ? 'Fatura no, alınan mal...' : 'Nakit, Havale...')} 
+              />
             </div>
 
             <button type="submit" className="btn btn-primary mt-4" style={{ width: '100%' }} disabled={loadingTx || (paymentMethod === 'Çek Cirolama' && !selectedCheckId)}>
               <Plus size={18} />
-              {loadingTx ? 'Kaydediliyor...' : 'İşlemi Kaydet'}
+              {loadingTx ? 'Kaydediliyor...' : (isSupplier ? 'Ödemeyi Kaydet' : 'İşlemi Kaydet')}
             </button>
           </form>
         </div>
@@ -333,8 +389,8 @@ export default function AccountDetail() {
               <tr>
                 <th>Tarih</th>
                 <th>Açıklama</th>
-                <th style={{ textAlign: 'right' }}>Borç (Çıkan)</th>
-                <th style={{ textAlign: 'right' }}>Alacak (Giren)</th>
+                <th style={{ textAlign: 'right' }}>{isSupplier ? 'Yapılan Ödeme (Çıkan)' : 'Borç (Çıkan)'}</th>
+                <th style={{ textAlign: 'right' }}>{isSupplier ? 'Mal Alımı / Fatura' : 'Alacak (Giren)'}</th>
                 <th className="sticky-right" style={{ width: '80px', textAlign: 'center', backgroundColor: '#181e25' }}>İşlem</th>
               </tr>
             </thead>

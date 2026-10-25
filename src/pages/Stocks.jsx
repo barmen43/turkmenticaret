@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { Search, Edit, Trash2, Plus, AlertCircle, Box, RefreshCw, X, HelpCircle, Printer, Camera } from 'lucide-react';
+import { Search, Edit, Trash2, Plus, AlertCircle, Box, RefreshCw, X, HelpCircle, Printer, Camera, Percent, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import BarcodeModal from '../components/BarcodeModal';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
+import BulkPriceUpdateModal from '../components/BulkPriceUpdateModal';
 
 // Basit Levenshtein mesafesi algoritması ile benzerlik hesaplama
 const getSimilarity = (s1, s2) => {
@@ -97,6 +98,9 @@ export default function Stocks() {
   // Scanner Modal State
   const [scannerOpen, setScannerOpen] = useState(false);
 
+  // Bulk Price Update Modal State
+  const [bulkPriceModalOpen, setBulkPriceModalOpen] = useState(false);
+
   const queryClient = useQueryClient();
   const [deleteModal, setDeleteModal] = useState({ open: false, stock: null, mode: 'confirm' });
 
@@ -128,6 +132,44 @@ export default function Stocks() {
       return data;
     },
   });
+
+  // Sayfalama (Pagination) State ve Hesaplamaları
+  const [pageSize, setPageSize] = useState(() => {
+    const saved = localStorage.getItem('stocks_page_size');
+    return saved === 'all' ? 'all' : (Number(saved) || 25);
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Arama değiştiğinde 1. sayfaya dön
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchParams, pageSize]);
+
+  const totalItems = stocks ? stocks.length : 0;
+  const isAll = pageSize === 'all';
+  const effectivePageSize = isAll ? (totalItems || 1) : (Number(pageSize) || 25);
+  const totalPages = isAll ? 1 : (Math.ceil(totalItems / effectivePageSize) || 1);
+
+  const paginatedStocks = useMemo(() => {
+    if (!stocks) return [];
+    if (isAll) return stocks;
+    const start = (currentPage - 1) * effectivePageSize;
+    return stocks.slice(start, start + effectivePageSize);
+  }, [stocks, currentPage, isAll, effectivePageSize]);
+
+  // Sayfa numaraları dizisi
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (currentPage <= 4) {
+      return [1, 2, 3, 4, 5, '...', totalPages];
+    }
+    if (currentPage >= totalPages - 3) {
+      return [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
+  }, [currentPage, totalPages]);
 
   // Eğer sonuç bulunamazsa öneriler için tüm veriyi çek (yalnızca sonuç yoksa çalışır)
   const { data: suggestions, isLoading: isLoadingSuggestions } = useQuery({
@@ -208,11 +250,26 @@ export default function Stocks() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h2 style={{ fontSize: '1.8rem' }}>Stok Listesi</h2>
-        <button className="btn btn-primary" onClick={() => navigate('/portal/yeni-stok')}>
-          <Plus size={18} />
-          <span>Yeni Parça Ekle</span>
-        </button>
+        <h2 style={{ fontSize: '1.8rem' }}>
+          Stok Listesi <span style={{ fontSize: '1.05rem', color: 'var(--color-text-muted)', fontWeight: 'normal' }}>({totalItems} Parça)</span>
+        </h2>
+        <div className="flex gap-2">
+          <button 
+            type="button"
+            id="btn-bulk-price-update"
+            className="btn btn-secondary" 
+            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+            onClick={() => setBulkPriceModalOpen(true)}
+            title="Markaya göre % artış veya indirim uygulayın"
+          >
+            <Percent size={18} className="text-primary" />
+            <span className="hide-on-mobile">Toplu Fiyat Güncelle</span>
+          </button>
+          <button className="btn btn-primary" onClick={() => navigate('/portal/yeni-stok')}>
+            <Plus size={18} />
+            <span>Yeni Parça Ekle</span>
+          </button>
+        </div>
       </div>
 
       <div className="glass-panel mb-6" style={{ padding: '1.5rem' }}>
@@ -249,7 +306,8 @@ export default function Stocks() {
         ) : isError ? (
           <div className="text-center text-danger" style={{ padding: '3rem' }}>Veriler alınırken bir hata oluştu.</div>
         ) : stocks && stocks.length > 0 ? (
-          <table className="data-table">
+          <>
+            <table className="data-table">
             <thead>
               <tr>
                 <th>Raf Yeri</th>
@@ -262,7 +320,7 @@ export default function Stocks() {
               </tr>
             </thead>
             <tbody>
-              {stocks.map((stock) => (
+              {paginatedStocks.map((stock) => (
                 <tr key={stock.id}>
                   <td>
                     {stock.shelf_location ? (
@@ -338,6 +396,112 @@ export default function Stocks() {
               ))}
             </tbody>
           </table>
+
+          {/* Sayfalama (Pagination) Kontrolleri */}
+          <div 
+            className="flex flex-wrap justify-between items-center gap-4" 
+            style={{ 
+              padding: '1.25rem 1rem', 
+              borderTop: '1px solid var(--color-border)',
+              background: 'rgba(0, 0, 0, 0.1)',
+              fontSize: '0.9rem' 
+            }}
+          >
+            {/* Sol: Sayfa Başına Gösterim */}
+            <div className="flex items-center gap-2">
+              <span style={{ color: 'var(--color-text-muted)' }}>Sayfa Başına Göster:</span>
+              <select 
+                value={pageSize} 
+                onChange={(e) => {
+                  const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
+                  setPageSize(val);
+                  localStorage.setItem('stocks_page_size', val);
+                  setCurrentPage(1);
+                }}
+                className="form-input"
+                style={{ width: 'auto', padding: '0.35rem 0.8rem', fontSize: '0.9rem', cursor: 'pointer' }}
+              >
+                <option value={10}>10 adet</option>
+                <option value={25}>25 adet</option>
+                <option value={50}>50 adet</option>
+                <option value={100}>100 adet</option>
+                <option value="all">Tümü ({totalItems})</option>
+              </select>
+            </div>
+
+            {/* Orta: Sayfa Numarası Butonları */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button 
+                  type="button"
+                  className="btn btn-secondary" 
+                  style={{ padding: '0.4rem 0.6rem' }} 
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(1)}
+                  title="İlk Sayfa"
+                >
+                  <ChevronsLeft size={16} />
+                </button>
+                <button 
+                  type="button"
+                  className="btn btn-secondary" 
+                  style={{ padding: '0.4rem 0.6rem' }} 
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  title="Önceki Sayfa"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                
+                {pageNumbers.map((num, idx) => (
+                  num === '...' ? (
+                    <span key={`dots-${idx}`} style={{ padding: '0 0.4rem', color: 'var(--color-text-muted)' }}>...</span>
+                  ) : (
+                    <button
+                      key={num}
+                      type="button"
+                      className={`btn ${currentPage === num ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ 
+                        padding: '0.35rem 0.75rem', 
+                        minWidth: '36px',
+                        fontWeight: currentPage === num ? 'bold' : 'normal'
+                      }}
+                      onClick={() => setCurrentPage(num)}
+                    >
+                      {num}
+                    </button>
+                  )
+                ))}
+
+                <button 
+                  type="button"
+                  className="btn btn-secondary" 
+                  style={{ padding: '0.4rem 0.6rem' }} 
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  title="Sonraki Sayfa"
+                >
+                  <ChevronRight size={16} />
+                </button>
+                <button 
+                  type="button"
+                  className="btn btn-secondary" 
+                  style={{ padding: '0.4rem 0.6rem' }} 
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                  title="Son Sayfa"
+                >
+                  <ChevronsRight size={16} />
+                </button>
+              </div>
+            )}
+
+            {/* Sağ: Bilgi Metni */}
+            <div style={{ color: 'var(--color-text-muted)' }}>
+              Toplam <strong>{totalItems}</strong> üründen <strong>{totalItems > 0 ? (currentPage - 1) * effectivePageSize + 1 : 0} - {Math.min(currentPage * effectivePageSize, totalItems)}</strong> arası gösteriliyor
+            </div>
+          </div>
+        </>
         ) : (
           <div className="text-center" style={{ padding: '4rem', color: 'var(--color-text-muted)' }}>
             <Box size={48} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
@@ -532,6 +696,17 @@ export default function Stocks() {
           </div>
         </div>
       )}
+
+      {/* Toplu Fiyat Güncelleme Modalı */}
+      <BulkPriceUpdateModal 
+        isOpen={bulkPriceModalOpen} 
+        onClose={() => setBulkPriceModalOpen(false)} 
+        onSuccess={() => {
+          queryClient.removeQueries({ queryKey: ['stocks'] });
+          queryClient.removeQueries({ queryKey: ['stock-suggestions'] });
+          queryClient.removeQueries({ queryKey: ['stocks_dropdown'] });
+        }}
+      />
 
     </div>
   );

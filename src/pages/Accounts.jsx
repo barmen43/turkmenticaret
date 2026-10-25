@@ -17,6 +17,8 @@ export default function Accounts() {
 
   const { data: accounts, isLoading, isError, refetch } = useQuery({
     queryKey: ['accounts', accountType, searchTerm],
+    staleTime: 0,
+    refetchOnMount: 'always',
     queryFn: async () => {
       let query = supabase
         .from('accounts')
@@ -117,8 +119,16 @@ export default function Accounts() {
                     <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{acc.phone || '-'}</div>
                   </td>
                   <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
-                    <span className={acc.balance < 0 ? 'text-danger' : acc.balance > 0 ? 'text-success' : ''}>
-                      {acc.balance < 0 ? 'Borçlu: ' : acc.balance > 0 ? 'Alacaklı: ' : ''}
+                    <span className={
+                      isCustomers
+                        ? (acc.balance < 0 ? 'text-danger' : acc.balance > 0 ? 'text-success' : '')
+                        : (acc.balance > 0 ? 'text-danger' : acc.balance < 0 ? 'text-success' : '')
+                    }>
+                      {isCustomers ? (
+                        acc.balance < 0 ? 'Borçlu: ' : acc.balance > 0 ? 'Alacaklı: ' : ''
+                      ) : (
+                        acc.balance > 0 ? 'Borcumuz: ' : acc.balance < 0 ? 'Alacağımız: ' : ''
+                      )}
                       ₺{Math.abs(acc.balance).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </td>
