@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, Package, PlusCircle, LayoutDashboard, Users, Truck, CreditCard, ShoppingCart, Menu, X, RefreshCcw } from 'lucide-react';
+import { LogOut, Package, PlusCircle, LayoutDashboard, Users, Truck, CreditCard, ShoppingCart, Menu, X, RefreshCcw, Wallet } from 'lucide-react';
 
 export default function Layout() {
   const { signOut } = useAuth();
@@ -22,6 +22,7 @@ export default function Layout() {
     { path: '/portal', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/portal/satis', label: 'HIZLI SATIŞ (POS)', icon: ShoppingCart, highlight: true },
     { path: '/portal/iade', label: 'İADE', icon: RefreshCcw },
+    { path: '/portal/kasa', label: 'Kasa', icon: Wallet },
     { path: '/portal/stoklar', label: 'Stok Listesi', icon: Package },
     { path: '/portal/musteriler', label: 'Müşteriler', icon: Users },
     { path: '/portal/tedarikciler', label: 'Tedarikçiler', icon: Truck },

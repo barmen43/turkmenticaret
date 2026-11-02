@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { ArrowLeft, BookOpen, Plus, Trash2, Search, Printer } from 'lucide-react';
+import { ArrowLeft, BookOpen, Plus, Trash2, Search, Printer, X, Box } from 'lucide-react';
 import dayjs from 'dayjs';
 import SaleDetailModal from '../components/SaleDetailModal';
 import { printCollectionReceipt } from '../lib/printReceipt';
@@ -29,6 +29,15 @@ export default function AccountDetail() {
 
   const [loadingTx, setLoadingTx] = useState(false);
   const [selectedSalePrefix, setSelectedSalePrefix] = useState(null);
+  const [selectedPurchaseTx, setSelectedPurchaseTx] = useState(null);
+
+  const { data: stocksList } = useQuery({
+    queryKey: ['stocks_for_purchase_detail'],
+    queryFn: async () => {
+      const { data } = await supabase.from('stocks').select('*');
+      return data || [];
+    }
+  });
 
   const { data: account, isLoading: loadingAccount } = useQuery({
     queryKey: ['account', id],
@@ -395,26 +404,47 @@ export default function AccountDetail() {
               </tr>
             </thead>
             <tbody>
-              {transactions.map(tx => (
-                <tr key={tx.id}>
+              {transactions.map(tx => {
+                const cleanDesc = (tx.description || '').split(' ||ITEMS:')[0];
+                const isSaleOrReturn = cleanDesc.includes('Sipariş: ') || cleanDesc.includes('İade: ');
+                const isPurchase = cleanDesc.startsWith('Ürün Girişi');
+                const isClickable = isSaleOrReturn || isPurchase;
+
+                const handleRowClick = () => {
+                  if (isSaleOrReturn) {
+                    const match = cleanDesc.match(/(?:Sipariş|İade):\s([a-f0-9\-]{8})/);
+                    if (match) setSelectedSalePrefix(match[1]);
+                  } else if (isPurchase) {
+                    setSelectedPurchaseTx(tx);
+                  }
+                };
+
+                return (
+                <tr 
+                  key={tx.id} 
+                  onClick={isClickable ? handleRowClick : undefined}
+                  style={{ cursor: isClickable ? 'pointer' : 'default' }}
+                  title={isClickable ? 'Detayları görmek için tıklayın' : undefined}
+                >
                   <td>{dayjs(tx.transaction_date).format('DD.MM.YYYY')}</td>
-                  <td>{tx.description}</td>
+                  <td>
+                    <span style={{ textDecoration: isClickable ? 'underline' : 'none', textDecorationStyle: 'dotted', textUnderlineOffset: '4px' }}>
+                      {cleanDesc}
+                    </span>
+                  </td>
                   <td style={{ textAlign: 'right', color: tx.transaction_type === 'Borç' ? 'var(--color-danger)' : 'inherit' }}>
                     {tx.transaction_type === 'Borç' ? `₺${Number(tx.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}` : '-'}
                   </td>
                   <td style={{ textAlign: 'right', color: tx.transaction_type === 'Alacak' ? 'var(--color-success)' : 'inherit' }}>
                     {tx.transaction_type === 'Alacak' ? `₺${Number(tx.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}` : '-'}
                   </td>
-                  <td className="sticky-right" style={{ textAlign: 'right' }}>
+                  <td className="sticky-right" style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-2">
-                      {tx.description && (tx.description.includes('Sipariş: ') || tx.description.includes('İade: ')) && (
+                      {isClickable && (
                         <button 
                           className="btn btn-secondary" 
                           style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} 
-                          onClick={() => {
-                            const match = tx.description.match(/(?:Sipariş|İade):\s([a-f0-9\-]{8})/);
-                            if (match) setSelectedSalePrefix(match[1]);
-                          }} 
+                          onClick={handleRowClick} 
                           title="Fiş / İşlem Detayını Gör"
                         >
                           <Search size={14} className="text-primary" />
@@ -434,7 +464,8 @@ export default function AccountDetail() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         ) : (
@@ -448,6 +479,121 @@ export default function AccountDetail() {
           onClose={() => setSelectedSalePrefix(null)} 
         />
       )}
+
+      {selectedPurchaseTx && (() => {
+        const desc = selectedPurchaseTx.description || '';
+        const parts = desc.split(' ||ITEMS:');
+        let items = [];
+        if (parts[1]) {
+          try {
+            items = JSON.parse(parts[1]);
+          } catch (e) {
+            console.error(e);
+          }
+        } else {
+          const afterColon = parts[0].split(':')[1] || '';
+          const codes = afterColon.split(',').map(s => s.trim()).filter(Boolean);
+          items = codes.map(codeOrSummary => {
+            const cleanCode = codeOrSummary.replace(/\s*\(\d+\s*Adet\)$/i, '').trim();
+            const found = stocksList?.find(st => 
+              st.part_code?.toLowerCase() === cleanCode.toLowerCase() || 
+              st.part_name?.toLowerCase() === cleanCode.toLowerCase()
+            );
+            if (found) {
+              return {
+                part_code: found.part_code,
+                part_name: found.part_name,
+                quantity: codes.length === 1 && found.quantity ? found.quantity : '-',
+                buying_price: found.buying_price || (codes.length === 1 && found.quantity ? (Number(selectedPurchaseTx.amount) / 1.2) / found.quantity : 0),
+                discount: 0,
+                kdv_rate: 20,
+                total: codes.length === 1 ? Number(selectedPurchaseTx.amount) : null
+              };
+            }
+            return {
+              part_code: cleanCode,
+              part_name: cleanCode,
+              quantity: '-',
+              buying_price: 0,
+              discount: 0,
+              kdv_rate: 0,
+              total: null
+            };
+          });
+        }
+
+        return (
+          <div className="modal-overlay" onClick={() => setSelectedPurchaseTx(null)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '650px' }}>
+              <div className="modal-header flex justify-between items-center">
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Box className="text-primary" /> Alınan Ürünler / Fatura Detayı
+                </h3>
+                <button className="modal-close" onClick={() => setSelectedPurchaseTx(null)}>
+                  <X size={24} />
+                </button>
+              </div>
+              <div className="modal-body">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                  <div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Tedarikçi</div>
+                    <div className="font-bold text-primary">{account.name}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>İşlem Tarihi</div>
+                    <div className="font-bold">{dayjs(selectedPurchaseTx.transaction_date).format('DD.MM.YYYY')}</div>
+                  </div>
+                </div>
+
+                <h4 className="mb-2">Alınan Kalemler</h4>
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Ürün Adı / Kodu</th>
+                        <th style={{ textAlign: 'center' }}>Miktar</th>
+                        <th style={{ textAlign: 'right' }}>Birim Alış</th>
+                        <th style={{ textAlign: 'center' }}>İsk. / KDV</th>
+                        <th style={{ textAlign: 'right' }}>Toplam</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item, idx) => (
+                        <tr key={idx}>
+                          <td>
+                            <div className="font-bold">{item.part_name}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Kod: {item.part_code || '-'}</div>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>{item.quantity !== '-' ? `${item.quantity} Adet` : '-'}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            {item.buying_price ? `₺${Number(item.buying_price).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}` : '-'}
+                          </td>
+                          <td style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                            {item.total !== null ? `%${item.discount || 0} / %${item.kdv_rate || 0}` : '-'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
+                            {item.total !== null 
+                              ? `₺${Number(item.total).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}` 
+                              : (items.length === 1 ? `₺${Number(selectedPurchaseTx.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}` : '-')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan="4" style={{ textAlign: 'right', fontWeight: 'bold' }}>Fatura / İşlem Toplamı:</td>
+                        <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1.2rem', color: 'var(--color-success)' }}>
+                          ₺{Number(selectedPurchaseTx.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

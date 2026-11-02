@@ -193,7 +193,7 @@ export const printCollectionReceipt = (tx, account, currentBalance, options = {}
             <td class="right">${tx.payment_method || 'Belirtilmedi'}</td>
           </tr>
           <tr>
-            <td colspan="2" style="padding-top: 5px; font-size: 11px;">Açıklama: ${tx.description || '-'}</td>
+            <td colspan="2" style="padding-top: 5px; font-size: 11px;">Açıklama: ${(tx.description || '-').split(' ||ITEMS:')[0]}</td>
           </tr>
         </table>
         

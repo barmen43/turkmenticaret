@@ -19,6 +19,7 @@ import AccountDetail from './pages/AccountDetail';
 import Checks from './pages/Checks';
 import POS from './pages/POS';
 import Returns from './pages/Returns';
+import CashRegister from './pages/CashRegister';
 import './index.css';
 
 createRoot(document.getElementById('root')).render(
@@ -59,6 +60,7 @@ createRoot(document.getElementById('root')).render(
                 <Route path="cekler" element={<Checks />} />
                 <Route path="satis" element={<POS />} />
                 <Route path="iade" element={<Returns />} />
+                <Route path="kasa" element={<CashRegister />} />
               </Route>
             </Routes>
           </AuthProvider>

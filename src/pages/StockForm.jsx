@@ -315,7 +315,7 @@ export default function StockForm() {
       if (payload.min_stock_warning === '') payload.min_stock_warning = 0;
 
       if (isEditing) {
-        const { id: _id, margin: _m, kdv_rate: _k, discount: _d, buying_price: _b, ...cleanPayload } = payload;
+        const { id: _id, margin: _m, kdv_rate: _k, discount: _d, ...cleanPayload } = payload;
         const { error: updateError } = await supabase
           .from('stocks')
           .update({ ...cleanPayload, updated_at: new Date().toISOString() })
@@ -370,7 +370,7 @@ export default function StockForm() {
              };
              
              // Sadece formda doldurulmuş alanları güncelle (mevcut veriyi boş string ile ezmemek için)
-             const { id: _id, margin: _m, kdv_rate: _k, discount: _d, buying_price: _b, quantity: _q, ...otherFields } = item;
+             const { id: _id, margin: _m, kdv_rate: _k, discount: _d, quantity: _q, ...otherFields } = item;
              for (const [key, val] of Object.entries(otherFields)) {
                  if (val !== '' && val !== null && val !== undefined) {
                      updatePayload[key] = val;
@@ -381,7 +381,7 @@ export default function StockForm() {
              if (updErr) throw updErr;
           } else {
              // Yeni ürün ekle
-             const { id: itemId, margin, kdv_rate, discount, buying_price, ...insertData } = item;
+             const { id: itemId, margin, kdv_rate, discount, ...insertData } = item;
              const { data: insData, error: insErr } = await supabase.from('stocks').insert([insertData]).select('id').single();
              if (insErr) throw insErr;
              if (!stockId && insData) stockId = insData.id;
@@ -391,15 +391,38 @@ export default function StockForm() {
 
       // Muhasebe Kaydı İşlemleri
       if (transaction.log_transaction && transaction.supplier_id && transaction.amount > 0) {
+        const allItems = !isEditing 
+          ? [...draftItems, ...(formData.part_name && formData.part_code ? [formData] : [])]
+          : [formData];
+        const itemsSummary = allItems.map(i => `${i.part_name} (${i.quantity} Adet)`).join(', ');
+        const itemsJson = JSON.stringify(allItems.map(i => {
+          const qty = Number(i.quantity) || 0;
+          const bp = Number(i.buying_price) || 0;
+          const disc = Number(i.discount) || 0;
+          const kdv = Number(i.kdv_rate) || 0;
+          const rawSub = qty * bp;
+          const sub = rawSub - (rawSub * (disc / 100));
+          const total = sub * (1 + (kdv / 100));
+          return {
+            part_code: i.part_code,
+            part_name: i.part_name,
+            quantity: qty,
+            buying_price: bp,
+            discount: disc,
+            kdv_rate: kdv,
+            total: total
+          };
+        }));
+
         if (transaction.payment_method === 'Veresiye') {
-          // Cari hesaba Alacak yaz
+          // Cari hesaba Alacak yaz (payment_method DB kısıtlamasına takılmaması için 'Nakit' olarak kaydedilir, açıklamaya Veresiye yazılır)
           const { error: txError } = await supabase.from('transactions').insert([{
             account_id: transaction.supplier_id,
             transaction_type: 'Alacak', // Tedarikçiye borçlandık, onun bizden alacağı var
-            amount: transaction.amount,
-            payment_method: 'Veresiye',
+            amount: Number(transaction.amount),
+            payment_method: 'Nakit',
             transaction_date: new Date().toISOString(),
-            description: `Ürün Girişi: ${formData.part_code || formData.part_name}`
+            description: `Ürün Girişi (Veresiye): ${itemsSummary} ||ITEMS:${itemsJson}`
           }]);
           if (txError) throw txError;
         } 
@@ -414,7 +437,7 @@ export default function StockForm() {
             bank_name: '-',
             owner_name: 'Firmamız', // Kendi çekimiz/senedimiz
             due_date: transaction.check_due_date,
-            amount: transaction.amount,
+            amount: Number(transaction.amount),
             given_to: transaction.supplier_id,
             status: 'Verildi' // Tedarikçiye verildi
           }]);
@@ -426,11 +449,14 @@ export default function StockForm() {
       // Önbelleği tamamen temizle (Eski 175 vb. rakamların görünmesini engellemek için)
       queryClient.removeQueries({ queryKey: ['stocks'] });
       queryClient.removeQueries({ queryKey: ['stocks_dropdown'] });
+      queryClient.removeQueries({ queryKey: ['dashboard-stats-v2'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
       
       navigate('/portal/stoklar');
     } catch (err) {
       console.error(err);
-      setError('İşlem sırasında bir hata oluştu. Lütfen tekrar deneyin.');
+      setError(err.message || 'İşlem sırasında bir hata oluştu. Lütfen tekrar deneyin.');
     } finally {
       setLoading(false);
     }
@@ -774,6 +800,20 @@ export default function StockForm() {
                         </select>
                       </div>
                     </div>
+
+                    {transaction.payment_method === 'Çek / Senet' && (
+                      <div className="form-group animate-fade-in">
+                        <label className="form-label">Vade Tarihi *</label>
+                        <input 
+                          type="date" 
+                          name="check_due_date" 
+                          value={transaction.check_due_date} 
+                          onChange={handleTransactionChange} 
+                          className="form-input" 
+                          required 
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
