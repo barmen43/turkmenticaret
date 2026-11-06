@@ -21,14 +21,27 @@ export const queryClient = new QueryClient({
 export const asyncStoragePersister = createAsyncStoragePersister({
   storage: {
     getItem: async (key) => {
-      const val = await get(key);
-      return val ? val : null;
+      try {
+        const val = await get(key);
+        return val ? val : null;
+      } catch (err) {
+        console.warn('IndexedDB getItem error:', err);
+        return null;
+      }
     },
     setItem: async (key, value) => {
-      await set(key, value);
+      try {
+        await set(key, value);
+      } catch (err) {
+        console.warn('IndexedDB setItem error:', err);
+      }
     },
     removeItem: async (key) => {
-      await del(key);
+      try {
+        await del(key);
+      } catch (err) {
+        console.warn('IndexedDB removeItem error:', err);
+      }
     },
   },
 });

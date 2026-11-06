@@ -22,6 +22,11 @@ import Returns from './pages/Returns';
 import CashRegister from './pages/CashRegister';
 import './index.css';
 
+// Automatically reload once if a stale PWA/HTML tries to load an outdated JS chunk after deploy
+window.addEventListener('vite:preloadError', () => {
+  window.location.reload();
+});
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <HelmetProvider>
