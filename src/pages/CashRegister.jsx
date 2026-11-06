@@ -353,62 +353,62 @@ export default function CashRegister() {
       </div>
 
       {/* Üst Özet Kartları */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
-        <div className="glass-panel p-4" style={{ padding: '1.35rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
-          <div style={{ background: 'rgba(34, 197, 94, 0.1)', padding: '0.85rem', borderRadius: 'var(--radius-lg)' }}>
-            <ArrowDownCircle size={28} color="var(--color-success)" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+        <div className="glass-panel p-4" style={{ padding: '1.1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.85rem', border: '1px solid rgba(34, 197, 94, 0.3)', minWidth: 0 }}>
+          <div style={{ background: 'rgba(34, 197, 94, 0.1)', padding: '0.7rem', borderRadius: 'var(--radius-lg)', flexShrink: 0 }}>
+            <ArrowDownCircle size={24} color="var(--color-success)" />
           </div>
-          <div>
-            <p className="form-label" style={{ marginBottom: '0.2rem', fontSize: '0.8rem' }}>Toplam Kasa Girişi</p>
-            <h3 style={{ fontSize: '1.45rem', margin: 0, color: 'var(--color-success)' }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p className="form-label" style={{ marginBottom: '0.2rem', fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Toplam Kasa Girişi</p>
+            <h3 style={{ fontSize: 'clamp(1.1rem, 1.4vw, 1.35rem)', margin: 0, color: 'var(--color-success)', whiteSpace: 'nowrap' }}>
               ₺{summary.totalIn.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </h3>
           </div>
         </div>
 
-        <div className="glass-panel p-4" style={{ padding: '1.35rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-          <div style={{ background: 'rgba(239, 68, 68, 0.1)', padding: '0.85rem', borderRadius: 'var(--radius-lg)' }}>
-            <ArrowUpCircle size={28} color="var(--color-danger)" />
+        <div className="glass-panel p-4" style={{ padding: '1.1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.85rem', border: '1px solid rgba(239, 68, 68, 0.3)', minWidth: 0 }}>
+          <div style={{ background: 'rgba(239, 68, 68, 0.1)', padding: '0.7rem', borderRadius: 'var(--radius-lg)', flexShrink: 0 }}>
+            <ArrowUpCircle size={24} color="var(--color-danger)" />
           </div>
-          <div>
-            <p className="form-label" style={{ marginBottom: '0.2rem', fontSize: '0.8rem' }}>Toplam Kasa Çıkışı</p>
-            <h3 style={{ fontSize: '1.45rem', margin: 0, color: 'var(--color-danger)' }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p className="form-label" style={{ marginBottom: '0.2rem', fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Toplam Kasa Çıkışı</p>
+            <h3 style={{ fontSize: 'clamp(1.1rem, 1.4vw, 1.35rem)', margin: 0, color: 'var(--color-danger)', whiteSpace: 'nowrap' }}>
               ₺{summary.totalOut.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </h3>
           </div>
         </div>
 
-        <div className="glass-panel p-4" style={{ padding: '1.35rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(249, 115, 22, 0.4)' }}>
-          <div style={{ background: 'rgba(249, 115, 22, 0.15)', padding: '0.85rem', borderRadius: 'var(--radius-lg)' }}>
-            <Wallet size={28} className="text-primary" />
+        <div className="glass-panel p-4" style={{ padding: '1.1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.85rem', border: '1px solid rgba(249, 115, 22, 0.4)', minWidth: 0 }}>
+          <div style={{ background: 'rgba(249, 115, 22, 0.15)', padding: '0.7rem', borderRadius: 'var(--radius-lg)', flexShrink: 0 }}>
+            <Wallet size={24} className="text-primary" />
           </div>
-          <div>
-            <p className="form-label" style={{ marginBottom: '0.2rem', fontSize: '0.8rem' }}>Net Kasa Bakiyesi</p>
-            <h3 style={{ fontSize: '1.45rem', margin: 0, color: summary.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-danger)' }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p className="form-label" style={{ marginBottom: '0.2rem', fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Net Kasa Bakiyesi</p>
+            <h3 style={{ fontSize: 'clamp(1.1rem, 1.4vw, 1.35rem)', margin: 0, color: summary.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-danger)', whiteSpace: 'nowrap' }}>
               ₺{summary.netBalance.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </h3>
           </div>
         </div>
 
-        <div className="glass-panel p-4" style={{ padding: '1.35rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '0.85rem', borderRadius: 'var(--radius-lg)' }}>
-            <Banknote size={28} color="#10b981" />
+        <div className="glass-panel p-4" style={{ padding: '1.1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.85rem', minWidth: 0 }}>
+          <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '0.7rem', borderRadius: 'var(--radius-lg)', flexShrink: 0 }}>
+            <Banknote size={24} color="#10b981" />
           </div>
-          <div>
-            <p className="form-label" style={{ marginBottom: '0.2rem', fontSize: '0.8rem' }}>Nakit Kasa (Net)</p>
-            <h3 style={{ fontSize: '1.35rem', margin: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p className="form-label" style={{ marginBottom: '0.2rem', fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Nakit Kasa (Net)</p>
+            <h3 style={{ fontSize: 'clamp(1.1rem, 1.4vw, 1.35rem)', margin: 0, whiteSpace: 'nowrap' }}>
               ₺{summary.cashNet.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </h3>
           </div>
         </div>
 
-        <div className="glass-panel p-4" style={{ padding: '1.35rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '0.85rem', borderRadius: 'var(--radius-lg)' }}>
-            <CreditCard size={28} color="#3b82f6" />
+        <div className="glass-panel p-4" style={{ padding: '1.1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.85rem', minWidth: 0 }}>
+          <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '0.7rem', borderRadius: 'var(--radius-lg)', flexShrink: 0 }}>
+            <CreditCard size={24} color="#3b82f6" />
           </div>
-          <div>
-            <p className="form-label" style={{ marginBottom: '0.2rem', fontSize: '0.8rem' }}>POS / K.Kartı + Banka</p>
-            <h3 style={{ fontSize: '1.35rem', margin: 0, color: '#3b82f6' }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p className="form-label" style={{ marginBottom: '0.2rem', fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>POS / Banka (Net)</p>
+            <h3 style={{ fontSize: 'clamp(1.1rem, 1.4vw, 1.35rem)', margin: 0, color: '#3b82f6', whiteSpace: 'nowrap' }}>
               ₺{(summary.cardNet + summary.bankNet).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </h3>
           </div>

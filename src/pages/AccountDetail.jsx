@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { ArrowLeft, BookOpen, Plus, Trash2, Search, Printer, X, Box } from 'lucide-react';
+import { ArrowLeft, BookOpen, Plus, Trash2, Search, Printer, X, Box, FilePlus } from 'lucide-react';
 import dayjs from 'dayjs';
 import SaleDetailModal from '../components/SaleDetailModal';
 import { printCollectionReceipt } from '../lib/printReceipt';
@@ -179,14 +179,27 @@ export default function AccountDetail() {
 
   return (
     <div className="animate-fade-in">
-      <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => navigate(-1)} className="btn btn-secondary" style={{ padding: '0.5rem' }}>
-          <ArrowLeft size={20} />
-        </button>
-        <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <BookOpen size={28} className="text-primary" />
-          {account.name} - Hesap Detayı
-        </h2>
+      <div className="flex items-center justify-between gap-4 mb-6" style={{ flexWrap: 'wrap' }}>
+        <div className="flex items-center gap-4">
+          <button onClick={() => navigate(-1)} className="btn btn-secondary" style={{ padding: '0.5rem' }}>
+            <ArrowLeft size={20} />
+          </button>
+          <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <BookOpen size={28} className="text-primary" />
+            {account.name} - Hesap Detayı
+          </h2>
+        </div>
+
+        {isSupplier && (
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate(`/portal/yeni-stok?supplier_id=${account.id}`)}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0.65rem 1.25rem' }}
+          >
+            <FilePlus size={18} />
+            Alış Faturası / Ürün Gir
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginBottom: '2rem' }}>

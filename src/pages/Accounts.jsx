@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Search, Plus, Edit, Trash2, BookOpen, Users, Truck } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, BookOpen, Users, Truck, FilePlus } from 'lucide-react';
 
 export default function Accounts() {
   const location = useLocation();
@@ -134,6 +134,17 @@ export default function Accounts() {
                   </td>
                   <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-2">
+                      {!isCustomers && (
+                        <button 
+                          className="btn btn-primary" 
+                          style={{ padding: '0.4rem 0.65rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          onClick={() => navigate(`/portal/yeni-stok?supplier_id=${acc.id}`)}
+                          title="Bu Tedarikçiden Alış Faturası / Ürün Gir"
+                        >
+                          <FilePlus size={15} />
+                          <span className="hide-on-mobile">Fatura Gir</span>
+                        </button>
+                      )}
                       <button 
                         className="btn btn-secondary" 
                         style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}

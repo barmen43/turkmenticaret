@@ -333,40 +333,46 @@ export default function POS() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {cart.map(item => (
-                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-                    <div style={{ flex: 1 }}>
-                      <div className="font-bold">{item.part_name}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
-                        Birim Fiyat: ₺
-                        <input
-                          type="number"
-                          className="form-input"
-                          style={{ padding: '0.1rem 0.5rem', fontSize: '0.9rem', width: '80px', height: '24px' }}
-                          value={item.price === '' ? '' : item.price}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            updatePrice(item.id, val === '' ? '' : Number(val));
-                          }}
-                        />
-                      </div>
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                    <div style={{ flex: '1 1 180px' }}>
+                      <div className="font-bold" style={{ fontSize: '1.05rem' }}>{item.part_name}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Kod: {item.part_code || '-'}</div>
+                    </div>
+
+                    {/* Birim Satış Fiyatı Düzenleme */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>Birim Satış Fiyatı (₺)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="form-input"
+                        style={{ padding: '0.4rem 0.65rem', fontSize: '1.05rem', fontWeight: 'bold', width: '125px', borderColor: 'rgba(249, 115, 22, 0.5)', backgroundColor: 'rgba(0,0,0,0.3)' }}
+                        value={item.price === '' ? '' : item.price}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updatePrice(item.id, val === '' ? '' : Number(val));
+                        }}
+                      />
                     </div>
                     
                     {/* Miktar Kontrolleri */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginRight: '2rem' }}>
-                      <button className="btn btn-secondary" style={{ padding: '0.3rem', borderRadius: '50%' }} onClick={() => updateQuantity(item.id, -1)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <button type="button" className="btn btn-secondary" style={{ padding: '0.35rem', borderRadius: '50%' }} onClick={() => updateQuantity(item.id, -1)}>
                         <Minus size={16} />
                       </button>
                       <span style={{ fontSize: '1.2rem', fontWeight: 'bold', width: '2rem', textAlign: 'center' }}>{item.cartQuantity}</span>
-                      <button className="btn btn-secondary" style={{ padding: '0.3rem', borderRadius: '50%' }} onClick={() => updateQuantity(item.id, 1)}>
+                      <button type="button" className="btn btn-secondary" style={{ padding: '0.35rem', borderRadius: '50%' }} onClick={() => updateQuantity(item.id, 1)}>
                         <Plus size={16} />
                       </button>
                     </div>
 
-                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', width: '100px', textAlign: 'right', color: 'var(--color-primary)' }}>
-                      ₺{(item.price * item.cartQuantity).toFixed(2)}
+                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', minWidth: '100px', textAlign: 'right', color: 'var(--color-primary)' }}>
+                      ₺{((Number(item.price) || 0) * item.cartQuantity).toFixed(2)}
                     </div>
                     
-                    <button className="btn btn-danger" style={{ padding: '0.5rem', marginLeft: '1rem', borderRadius: 'var(--radius-md)' }} onClick={() => removeFromCart(item.id)}>
+                    <button type="button" className="btn btn-danger" style={{ padding: '0.5rem', borderRadius: 'var(--radius-md)' }} onClick={() => removeFromCart(item.id)}>
                       <Trash2 size={18} />
                     </button>
                   </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Save, X, ArrowLeft, RefreshCw, Camera, ListPlus, Trash2 } from 'lucide-react';
@@ -33,6 +33,8 @@ import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
 export default function StockForm() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const preselectedSupplierId = searchParams.get('supplier_id') || '';
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isEditing = Boolean(id);
@@ -117,16 +119,41 @@ export default function StockForm() {
   });
 
   const [transaction, setTransaction] = useState({
-    log_transaction: false,
-    supplier_id: '',
+    log_transaction: Boolean(preselectedSupplierId),
+    supplier_id: preselectedSupplierId,
     payment_method: 'Veresiye',
     amount: 0,
-    check_due_date: ''
+    check_due_date: '',
+    invoice_no: ''
   });
 
   const [suppliers, setSuppliers] = useState([]);
 
   const [scannerOpen, setScannerOpen] = useState(false);
+
+  // Tedarikçi seçili veya muhasebe kutucuğu işaretli olduğunda fatura tutarını otomatik güncelle
+  useEffect(() => {
+    if (!transaction.log_transaction) return;
+    const rawCurrent = (Number(formData.quantity) || 0) * (Number(formData.buying_price) || 0);
+    const discountedCurrent = rawCurrent - (rawCurrent * ((Number(formData.discount) || 0) / 100));
+    const currentAmount = discountedCurrent * (1 + ((Number(formData.kdv_rate) || 0) / 100));
+
+    const draftAmount = draftItems.reduce((sum, item) => {
+      const raw = (Number(item.quantity) || 0) * (Number(item.buying_price) || 0);
+      const discounted = raw - (raw * ((Number(item.discount) || 0) / 100));
+      return sum + (discounted * (1 + ((Number(item.kdv_rate) || 0) / 100)));
+    }, 0);
+
+    const calcTotal = Math.round((currentAmount + draftAmount) * 100) / 100;
+    setTransaction(prev => ({ ...prev, amount: calcTotal }));
+  }, [
+    transaction.log_transaction,
+    formData.quantity,
+    formData.buying_price,
+    formData.discount,
+    formData.kdv_rate,
+    draftItems
+  ]);
 
   useEffect(() => {
     if (isEditing) {
@@ -395,6 +422,7 @@ export default function StockForm() {
           ? [...draftItems, ...(formData.part_name && formData.part_code ? [formData] : [])]
           : [formData];
         const itemsSummary = allItems.map(i => `${i.part_name} (${i.quantity} Adet)`).join(', ');
+        const invoicePrefix = transaction.invoice_no?.trim() ? `[Fatura No: ${transaction.invoice_no.trim()}] ` : '';
         const itemsJson = JSON.stringify(allItems.map(i => {
           const qty = Number(i.quantity) || 0;
           const bp = Number(i.buying_price) || 0;
@@ -422,7 +450,7 @@ export default function StockForm() {
             amount: Number(transaction.amount),
             payment_method: 'Nakit',
             transaction_date: new Date().toISOString(),
-            description: `Ürün Girişi (Veresiye): ${itemsSummary} ||ITEMS:${itemsJson}`
+            description: `Ürün Girişi (Veresiye): ${invoicePrefix}${itemsSummary} ||ITEMS:${itemsJson}`
           }]);
           if (txError) throw txError;
         } 
@@ -433,7 +461,7 @@ export default function StockForm() {
           // Çek/Senet tablosuna kaydet
           const { error: checkError } = await supabase.from('checks').insert([{
             type: 'Senet', // Varsayılan olarak Senet (veya firma çeki)
-            check_number: `STK-${stockId?.slice(0,6) || Math.floor(Math.random()*1000)}`,
+            check_number: transaction.invoice_no?.trim() || `STK-${stockId?.slice(0,6) || Math.floor(Math.random()*1000)}`,
             bank_name: '-',
             owner_name: 'Firmamız', // Kendi çekimiz/senedimiz
             due_date: transaction.check_due_date,
@@ -449,11 +477,15 @@ export default function StockForm() {
       // Önbelleği tamamen temizle (Eski 175 vb. rakamların görünmesini engellemek için)
       queryClient.removeQueries({ queryKey: ['stocks'] });
       queryClient.removeQueries({ queryKey: ['stocks_dropdown'] });
-      queryClient.removeQueries({ queryKey: ['dashboard-stats-v2'] });
+      queryClient.removeQueries({ queryKey: ['dashboard-stats-v3'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       
-      navigate('/portal/stoklar');
+      if (preselectedSupplierId) {
+        navigate(`/portal/cari-detay/${preselectedSupplierId}`);
+      } else {
+        navigate('/portal/stoklar');
+      }
     } catch (err) {
       console.error(err);
       setError(err.message || 'İşlem sırasında bir hata oluştu. Lütfen tekrar deneyin.');
@@ -469,7 +501,11 @@ export default function StockForm() {
           <ArrowLeft size={20} />
         </button>
         <h2 style={{ fontSize: '1.8rem', margin: 0 }}>
-          {isEditing ? 'Stok Düzenle' : 'Yeni Parça Ekle'}
+          {isEditing 
+            ? 'Stok Düzenle' 
+            : preselectedSupplierId 
+              ? `Alış Faturası / Ürün Girişi (${suppliers.find(s => s.id === preselectedSupplierId)?.name || 'Tedarikçi'})` 
+              : 'Yeni Parça Ekle'}
         </h2>
       </div>
 
@@ -697,53 +733,72 @@ export default function StockForm() {
             </div>
           </div>
         </div>
-        {!isEditing && draftItems.length > 0 && (
+        {!isEditing && (() => {
+          const allInvoiceItems = [
+            ...draftItems,
+            ...(formData.part_name || formData.part_code || Number(formData.buying_price) > 0 ? [formData] : [])
+          ];
+          const rawTotal = allInvoiceItems.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.buying_price) || 0)), 0);
+          const discountTotal = allInvoiceItems.reduce((sum, item) => {
+            const raw = (Number(item.quantity) || 0) * (Number(item.buying_price) || 0);
+            return sum + (raw * ((Number(item.discount) || 0) / 100));
+          }, 0);
+          const kdvTotal = allInvoiceItems.reduce((sum, item) => {
+            const raw = (Number(item.quantity) || 0) * (Number(item.buying_price) || 0);
+            const discounted = raw - (raw * ((Number(item.discount) || 0) / 100));
+            return sum + (discounted * ((Number(item.kdv_rate) || 0) / 100));
+          }, 0);
+          const grandTotal = rawTotal - discountTotal + kdvTotal;
+
+          return (
           <div className="glass-panel mt-6 animate-fade-in" style={{ padding: '1.5rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--color-border)' }}>
             <h3 className="mb-4 text-primary" style={{ fontSize: '1.4rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
-              Fatura Özeti ({draftItems.length} Kalem)
+              Alış Faturası & Muhasebe ({draftItems.length > 0 ? `${draftItems.length} Eklenen Kalem` : 'Ürün Girişi'})
             </h3>
             
-            <div style={{ overflowX: 'auto', marginBottom: '2rem' }}>
-              <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
-                    <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>Ürün Adı / Kodu</th>
-                    <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>Miktar</th>
-                    <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>Birim Alış</th>
-                    <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>İskonto</th>
-                    <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>KDV</th>
-                    <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'normal' }}>Toplam</th>
-                    <th style={{ padding: '0.75rem', textAlign: 'center', width: '50px' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {draftItems.map((item, idx) => {
-                    const rawSub = (item.quantity || 0) * (item.buying_price || 0);
-                    const sub = rawSub - (rawSub * ((item.discount || 0) / 100));
-                    const kdv = sub * ((item.kdv_rate || 0) / 100);
-                    const total = sub + kdv;
-                    return (
-                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <td style={{ padding: '1rem 0.75rem' }}>
-                          <div className="font-bold">{item.part_name}</div>
-                          <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{item.part_code}</div>
-                        </td>
-                        <td style={{ padding: '1rem 0.75rem' }}>{item.quantity} Adet</td>
-                        <td style={{ padding: '1rem 0.75rem' }}>₺{Number(item.buying_price).toFixed(2)}</td>
-                        <td style={{ padding: '1rem 0.75rem' }}>%{item.discount || 0}</td>
-                        <td style={{ padding: '1rem 0.75rem' }}>%{item.kdv_rate || 0}</td>
-                        <td style={{ padding: '1rem 0.75rem', textAlign: 'right', fontWeight: 'bold' }}>₺{total.toFixed(2)}</td>
-                        <td style={{ padding: '1rem 0.75rem', textAlign: 'center' }}>
-                          <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem', color: 'var(--color-danger)' }} onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}>
-                            <Trash2 size={18} />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {draftItems.length > 0 && (
+              <div style={{ overflowX: 'auto', marginBottom: '2rem' }}>
+                <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
+                      <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>Ürün Adı / Kodu</th>
+                      <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>Miktar</th>
+                      <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>Birim Alış</th>
+                      <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>İskonto</th>
+                      <th style={{ padding: '0.75rem', fontWeight: 'normal' }}>KDV</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'normal' }}>Toplam</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'center', width: '50px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draftItems.map((item, idx) => {
+                      const rawSub = (item.quantity || 0) * (item.buying_price || 0);
+                      const sub = rawSub - (rawSub * ((item.discount || 0) / 100));
+                      const kdv = sub * ((item.kdv_rate || 0) / 100);
+                      const total = sub + kdv;
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <td style={{ padding: '1rem 0.75rem' }}>
+                            <div className="font-bold">{item.part_name}</div>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{item.part_code}</div>
+                          </td>
+                          <td style={{ padding: '1rem 0.75rem' }}>{item.quantity} Adet</td>
+                          <td style={{ padding: '1rem 0.75rem' }}>₺{Number(item.buying_price).toFixed(2)}</td>
+                          <td style={{ padding: '1rem 0.75rem' }}>%{item.discount || 0}</td>
+                          <td style={{ padding: '1rem 0.75rem' }}>%{item.kdv_rate || 0}</td>
+                          <td style={{ padding: '1rem 0.75rem', textAlign: 'right', fontWeight: 'bold' }}>₺{total.toFixed(2)}</td>
+                          <td style={{ padding: '1rem 0.75rem', textAlign: 'center' }}>
+                            <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem', color: 'var(--color-danger)' }} onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}>
+                              <Trash2 size={18} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
               <div>
@@ -754,46 +809,46 @@ export default function StockForm() {
                     id="log_tx" 
                     name="log_transaction" 
                     checked={transaction.log_transaction} 
-                    onChange={(e) => {
-                      handleTransactionChange(e);
-                      if (e.target.checked) {
-                        const rawCurrent = ((formData.quantity || 0) * (formData.buying_price || 0));
-                        const discountedCurrent = rawCurrent - (rawCurrent * ((formData.discount || 0) / 100));
-                        const currentAmount = discountedCurrent * (1 + ((formData.kdv_rate || 0) / 100));
-                        const draftAmount = draftItems.reduce((sum, item) => {
-                      const raw = (item.quantity || 0) * (item.buying_price || 0);
-                      const discounted = raw - (raw * ((item.discount || 0) / 100));
-                      return sum + (discounted * (1 + ((item.kdv_rate || 0) / 100)));
-                    }, 0);
-                        setTransaction(prev => ({ ...prev, amount: currentAmount + draftAmount }));
-                      }
-                    }} 
+                    onChange={handleTransactionChange} 
                     style={{ width: '18px', height: '18px' }} 
                   />
-                  <label htmlFor="log_tx" style={{ margin: 0, cursor: 'pointer', fontWeight: 'bold' }}>Bu faturayı muhasebeye (Cari / Çek) işle</label>
+                  <label htmlFor="log_tx" style={{ margin: 0, cursor: 'pointer', fontWeight: 'bold' }}>Bu faturayı muhasebeye (Tedarikçi Cari / Çek) işle</label>
                 </div>
 
                 {transaction.log_transaction && (
                   <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <div className="form-group">
-                      <label className="form-label">Tedarikçi Seçin</label>
-                      <select name="supplier_id" value={transaction.supplier_id} onChange={handleTransactionChange} className="form-input">
-                        <option value="">-- Listeden Seçin --</option>
-                        {suppliers.map(s => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1rem' }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">Tedarikçi Seçin *</label>
+                        <select name="supplier_id" value={transaction.supplier_id} onChange={handleTransactionChange} className="form-input" required={transaction.log_transaction}>
+                          <option value="">-- Listeden Seçin --</option>
+                          {suppliers.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">Fatura / İrsaliye No</label>
+                        <input 
+                          type="text" 
+                          name="invoice_no" 
+                          value={transaction.invoice_no} 
+                          onChange={handleTransactionChange} 
+                          className="form-input" 
+                          placeholder="Örn: FT-2026001" 
+                        />
+                      </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                      <div className="form-group">
+                      <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label">İşlenecek Toplam (₺) *</label>
                         <input type="number" name="amount" value={transaction.amount} onChange={handleTransactionChange} className="form-input" min="0" step="0.01" required={transaction.log_transaction} />
                       </div>
-                      <div className="form-group">
+                      <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label">Ödeme Tipi *</label>
                         <select name="payment_method" value={transaction.payment_method} onChange={handleTransactionChange} className="form-input">
-                          <option value="Veresiye">Veresiye</option>
+                          <option value="Veresiye">Veresiye (Cariye Alacak İşle)</option>
                           <option value="Çek / Senet">Çek / Senet</option>
                           <option value="Nakit">Nakit</option>
                           <option value="Kredi Kartı">Kredi Kartı</option>
@@ -802,7 +857,7 @@ export default function StockForm() {
                     </div>
 
                     {transaction.payment_method === 'Çek / Senet' && (
-                      <div className="form-group animate-fade-in">
+                      <div className="form-group animate-fade-in" style={{ marginBottom: 0 }}>
                         <label className="form-label">Vade Tarihi *</label>
                         <input 
                           type="date" 
@@ -822,36 +877,26 @@ export default function StockForm() {
                 <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', color: 'var(--color-text-muted)' }}>
                     <span>Ara Toplam (İndirimsiz):</span>
-                    <span>₺{draftItems.reduce((sum, item) => sum + ((item.quantity || 0) * (item.buying_price || 0)), 0).toFixed(2)}</span>
+                    <span>₺{rawTotal.toFixed(2)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', color: 'var(--color-danger)' }}>
                     <span>İskonto Toplamı:</span>
-                    <span>- ₺{draftItems.reduce((sum, item) => {
-                      const raw = (item.quantity || 0) * (item.buying_price || 0);
-                      return sum + (raw * ((item.discount || 0) / 100));
-                    }, 0).toFixed(2)}</span>
+                    <span>- ₺{discountTotal.toFixed(2)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', color: 'var(--color-text-muted)' }}>
                     <span>KDV Toplam:</span>
-                    <span>₺{draftItems.reduce((sum, item) => {
-                      const raw = (item.quantity || 0) * (item.buying_price || 0);
-                      const discounted = raw - (raw * ((item.discount || 0) / 100));
-                      return sum + (discounted * ((item.kdv_rate || 0) / 100));
-                    }, 0).toFixed(2)}</span>
+                    <span>₺{kdvTotal.toFixed(2)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--color-primary)', borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
                     <span>Genel Toplam:</span>
-                    <span>₺{draftItems.reduce((sum, item) => {
-                      const raw = (item.quantity || 0) * (item.buying_price || 0);
-                      const discounted = raw - (raw * ((item.discount || 0) / 100));
-                      return sum + (discounted * (1 + ((item.kdv_rate || 0) / 100)));
-                    }, 0).toFixed(2)}</span>
+                    <span>₺{grandTotal.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         <div className="flex justify-end gap-4 mt-6" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1.5rem' }}>
           {!isEditing && (
